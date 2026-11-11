@@ -1,6 +1,19 @@
 package io.github.isramorante.brava.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -102,41 +115,71 @@ private fun gridRef(dot: MapDot, world: Int): String {
 @Composable
 fun MapPage(vm: AppViewModel, onBack: () -> Unit) {
     LaunchedEffect(Unit) {
+        vm.loadMapImage()
         while (true) {
             vm.loadMap()
             delay(10000)
         }
     }
     val world = vm.worldSize
+    val image = vm.mapImage
+    // The terrain image includes an ocean border around the playable square.
+    val margin = if (image != null) vm.mapMargin else 0
+    val total = (world + 2 * margin).toFloat()
+    var zoom by remember { mutableStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+
     Column(Modifier.fillMaxSize()) {
         SubHeader(tr("Player map", "Mapa de jugadores"), onBack)
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        BoxWithConstraints(
+            Modifier.fillMaxWidth().aspectRatio(1f).background(C.black).clipToBounds()
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, panChange, zoomChange, _ ->
+                        val nextZoom = (zoom * zoomChange).coerceIn(1f, 6f)
+                        val limit = size.width * (nextZoom - 1f) / 2f
+                        zoom = nextZoom
+                        pan = Offset(
+                            (pan.x + panChange.x).coerceIn(-limit, limit),
+                            (pan.y + panChange.y).coerceIn(-limit, limit),
+                        )
+                    }
+                },
         ) {
-            val error = vm.mapError
-            if (error != null) Text(tr("Could not load positions: ", "No se pudieron cargar las posiciones: ") + error, color = C.rustText, fontSize = 14.sp)
-            BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).background(C.black).border(1.dp, C.line2)) {
-                val side = maxWidth
+            val side = maxWidth
+            val sidePx = constraints.maxWidth.toFloat()
+            Box(Modifier.fillMaxSize().graphicsLayer(scaleX = zoom, scaleY = zoom, translationX = pan.x, translationY = pan.y)) {
+                if (image != null) {
+                    Image(image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+                }
                 Canvas(Modifier.fillMaxSize()) {
                     if (world > 0) {
-                        val step = size.width * CELL / world
-                        var p = step
-                        while (p < size.width) {
-                            drawLine(C.line, Offset(p, 0f), Offset(p, size.height), 1f)
-                            drawLine(C.line, Offset(0f, p), Offset(size.width, p), 1f)
+                        val start = size.width * margin / total
+                        val end = size.width * (margin + world) / total
+                        val step = size.width * CELL / total
+                        val gridColor = if (image != null) C.black.copy(alpha = 0.35f) else C.line
+                        var p = start
+                        while (p <= end + 0.5f) {
+                            drawLine(gridColor, Offset(p, start), Offset(p, end), 1f)
+                            drawLine(gridColor, Offset(start, p), Offset(end, p), 1f)
                             p += step
                         }
                     }
                 }
-                if (world > 0) {
-                    vm.mapDots.forEach { dot ->
-                        val fx = ((dot.x + world / 2f) / world).coerceIn(0f, 1f)
-                        val fy = ((world / 2f - dot.z) / world).coerceIn(0f, 1f)
-                        Box(Modifier.offset(x = side * fx - 5.dp, y = side * fy - 5.dp).size(10.dp).background(C.rust))
+            }
+            if (world > 0) {
+                // Dots stay the same size at any zoom, so they are drawn outside the zoomed layer.
+                vm.mapDots.forEach { dot ->
+                    val fx = ((dot.x + world / 2f + margin) / total).coerceIn(0f, 1f)
+                    val fy = ((world / 2f + margin - dot.z) / total).coerceIn(0f, 1f)
+                    val x = (fx * sidePx - sidePx / 2f) * zoom + sidePx / 2f + pan.x
+                    val y = (fy * sidePx - sidePx / 2f) * zoom + sidePx / 2f + pan.y
+                    if (x in 0f..sidePx && y in 0f..sidePx) {
+                        val xd = side * (x / sidePx)
+                        val yd = side * (y / sidePx)
+                        Box(Modifier.offset(x = xd - 6.dp, y = yd - 6.dp).size(12.dp).background(C.rust).border(2.dp, C.black))
                         Text(
-                            dot.name.take(12),
-                            Modifier.offset(x = side * fx + 8.dp, y = side * fy - 9.dp),
+                            dot.name.take(14),
+                            Modifier.offset(x = xd + 9.dp, y = yd - 10.dp).background(C.black.copy(alpha = 0.6f)).padding(horizontal = 3.dp),
                             color = C.ink,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -145,15 +188,27 @@ fun MapPage(vm: AppViewModel, onBack: () -> Unit) {
                     }
                 }
             }
-            Text(
-                tr(
-                    "Grid only, without the terrain image. Updates every 10 seconds. Map size: $world.",
-                    "Solo la cuadrícula, sin la imagen del terreno. Se actualiza cada 10 segundos. Tamaño del mapa: $world.",
-                ),
-                color = C.mute,
-                fontSize = 13.sp,
-            )
-            if (vm.mapDots.isEmpty()) Text(tr("No players to show.", "No hay jugadores que mostrar."), color = C.mute)
+        }
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            val error = vm.mapError
+            if (error != null) Text(tr("Could not load positions: ", "No se pudieron cargar las posiciones: ") + error, color = C.rustText, fontSize = 14.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(
+                    when (vm.mapImageState) {
+                        "loading" -> tr("Drawing the terrain on the server… the first time takes about 20 seconds.", "Dibujando el terreno en el servidor… la primera vez tarda unos 20 segundos.")
+                        "error" -> tr("No terrain image (needs the BravaCompanion plugin). Showing the grid only.", "Sin imagen del terreno (necesita el plugin BravaCompanion). Solo se ve la cuadrícula.")
+                        else -> tr("Pinch to zoom. Positions update every 10 seconds.", "Pellizca para hacer zoom. Las posiciones se actualizan cada 10 segundos.")
+                    },
+                    Modifier.weight(1f),
+                    color = C.mute,
+                    fontSize = 13.sp,
+                )
+                if (zoom > 1f) BravaButton(tr("Reset", "Ajustar"), { zoom = 1f; pan = Offset.Zero }, height = 40.dp)
+            }
+            if (vm.mapDots.isEmpty()) Text(tr("Nobody is connected.", "No hay nadie conectado."), color = C.mute)
             vm.mapDots.forEach { dot ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(dot.name, fontWeight = FontWeight.Bold)
@@ -171,6 +226,15 @@ fun AlertsPage(vm: AppViewModel, onBack: () -> Unit) {
     var dialog by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { vm.loadCompanion() }
     val cfg = vm.companion
+    val context = LocalContext.current
+    val server = vm.active
+    val watching = server != null && server.id in vm.watched
+    val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (server != null) {
+            vm.setWatched(server, granted)
+            if (!granted) vm.toast = tr("Without notification permission the phone cannot warn you.", "Sin permiso de notificaciones el teléfono no puede avisarte.")
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         SubHeader(tr("Alerts", "Alertas"), onBack)
@@ -178,6 +242,28 @@ fun AlertsPage(vm: AppViewModel, onBack: () -> Unit) {
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Label(tr("This phone", "Este teléfono"))
+            Toggle(
+                tr("Warn me if the server goes down", "Avisarme si el servidor se cae"),
+                tr(
+                    "The phone checks the server every 15 minutes, even with Brava closed, and warns after two failed checks. Works without the plugin.",
+                    "El teléfono revisa el servidor cada 15 minutos, aunque Brava esté cerrada, y avisa tras dos revisiones fallidas. Funciona sin el plugin.",
+                ),
+                watching,
+            ) {
+                if (server == null) return@Toggle
+                if (watching) {
+                    vm.setWatched(server, false)
+                } else if (Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    askPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    vm.setWatched(server, true)
+                }
+            }
+
+            Label(tr("Server plugin", "Plugin del servidor"), Modifier.padding(top = 8.dp))
             if (cfg == null) {
                 Text(
                     if (vm.companionState == "loading") tr("Checking the server…", "Revisando el servidor…")
@@ -191,7 +277,7 @@ fun AlertsPage(vm: AppViewModel, onBack: () -> Unit) {
                 return@Column
             }
 
-            Label(tr("Phone alerts", "Alertas al teléfono"))
+            Label(tr("Alerts through ntfy", "Alertas por ntfy"))
             Text(
                 tr(
                     "Alerts arrive through the free ntfy app. Install ntfy on your phone and subscribe to the same topic you set here. Use a long, hard-to-guess topic: anyone who knows it can read the alerts.",
@@ -212,6 +298,12 @@ fun AlertsPage(vm: AppViewModel, onBack: () -> Unit) {
             Toggle(tr("Every player join", "Cada jugador que entra"), "", cfg.notifyJoins) { vm.companionCmd("brava.joins ${!cfg.notifyJoins}") }
             Toggle(tr("Wipe finished (new map)", "Wipe terminado (mapa nuevo)"), "", cfg.notifyWipe) { vm.companionCmd("brava.wipe ${!cfg.notifyWipe}") }
             Toggle(tr("Server started", "Servidor encendido"), "", cfg.notifyStart) { vm.companionCmd("brava.start ${!cfg.notifyStart}") }
+            Toggle(tr("F7 reports", "Reportes F7"), "", cfg.notifyReports) { vm.companionCmd("brava.reportalerts ${!cfg.notifyReports}") }
+            Toggle(
+                tr("Alert language", "Idioma de las alertas"),
+                if (cfg.language == "es") "Español" else "English",
+                null,
+            ) { vm.companionCmd("brava.language " + if (cfg.language == "es") "en" else "es") }
 
             Label(tr("Fresh-wipe server name", "Nombre del servidor recién wipeado"), Modifier.padding(top = 8.dp))
             Toggle(

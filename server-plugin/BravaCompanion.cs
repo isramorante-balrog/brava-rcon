@@ -1,16 +1,24 @@
 // BravaCompanion - server side of the Brava RCON Android app.
-// Sends phone alerts through ntfy, runs scheduled commands and tags the server name after a wipe.
+// Sends phone alerts through ntfy, runs scheduled commands, tags the server name after a wipe,
+// keeps F7 reports and a player history, and lets the app edit kits and the Carbon wipe calendar.
 // Install: copy this file into carbon/plugins or oxide/plugins.
 // License: GPL-3.0
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Oxide.Core;
 using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.1.0")]
+    [Info("BravaCompanion", "Brava RCON", "1.2.0")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -35,7 +43,43 @@ namespace Oxide.Plugins
             // Server name used while the map is fresh. {date} becomes the wipe day (dd/MM). Empty turns it off.
             public string FreshHostname = "";
             public double FreshHours = 48;
+            // "es" or "en": language of the phone alerts.
+            public string Language = "en";
+            public bool NotifyReports = true;
         }
+
+        private class Report
+        {
+            public long Time;
+            public string ReporterId = "";
+            public string ReporterName = "";
+            public string TargetId = "";
+            public string TargetName = "";
+            public string Type = "";
+            public string Subject = "";
+            public string Message = "";
+        }
+
+        private class Seen
+        {
+            public string Id = "";
+            public string Name = "";
+            public long First;
+            public long Last;
+            public int Visits;
+        }
+
+        private class StoredData
+        {
+            public List<Report> Reports = new List<Report>();
+            public Dictionary<string, Seen> Players = new Dictionary<string, Seen>();
+        }
+
+        private StoredData data = new StoredData();
+        private bool dataDirty;
+        private string mapImage;
+        private int mapWidth, mapHeight, mapMargin;
+        private const int Chunk = 60000;
 
         private Settings settings = new Settings();
         private readonly Dictionary<int, string> lastDailyRun = new Dictionary<int, string>();
@@ -81,8 +125,8 @@ namespace Oxide.Plugins
             baseHostname = ConVar.Server.hostname;
             ApplyHostname();
             timer.Every(20f, Tick);
-            if (wiped && settings.NotifyWipe) Push("Wipe finished", ConVar.Server.hostname + " is up with a new map.");
-            else if (initial && settings.NotifyStart) Push("Server started", ConVar.Server.hostname + " is online.");
+            if (wiped && settings.NotifyWipe) Push(T("Wipe finished", "Wipe terminado"), ConVar.Server.hostname + T(" is up with a new map.", " ya está en línea con mapa nuevo."));
+            else if (initial && settings.NotifyStart) Push(T("Server started", "Servidor encendido"), ConVar.Server.hostname + T(" is online.", " está en línea."));
             wiped = false;
         }
 
@@ -90,6 +134,8 @@ namespace Oxide.Plugins
         {
             // Put the normal name back so a reload does not mistake the tagged name for the normal one.
             if (!string.IsNullOrEmpty(baseHostname)) ConVar.Server.hostname = baseHostname;
+            foreach (BasePlayer player in BasePlayer.activePlayerList) Touch(player, false);
+            SaveData();
         }
 
         // ---- fresh-wipe server name ----
@@ -124,10 +170,95 @@ namespace Oxide.Plugins
             Puts("Server name set to: " + wanted);
         }
 
+        private string T(string en, string es)
+        {
+            return settings.Language == "es" ? es : en;
+        }
+
+        private static long Now()
+        {
+            return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        }
+
+        private void Init()
+        {
+            try
+            {
+                data = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(Name) ?? new StoredData();
+            }
+            catch
+            {
+                data = new StoredData();
+            }
+            if (data.Reports == null) data.Reports = new List<Report>();
+            if (data.Players == null) data.Players = new Dictionary<string, Seen>();
+        }
+
+        private void OnServerSave()
+        {
+            SaveData();
+        }
+
+        private void SaveData()
+        {
+            if (!dataDirty) return;
+            dataDirty = false;
+            Interface.Oxide.DataFileSystem.WriteObject(Name, data);
+        }
+
+        private void Touch(BasePlayer player, bool joining)
+        {
+            if (player == null || player.UserIDString.Length != 17 || !player.UserIDString.StartsWith("7656")) return;
+            string id = player.UserIDString;
+            Seen seen;
+            if (!data.Players.TryGetValue(id, out seen))
+            {
+                seen = new Seen { Id = id, First = Now() };
+                data.Players[id] = seen;
+            }
+            seen.Name = player.displayName;
+            seen.Last = Now();
+            if (joining) seen.Visits++;
+            dataDirty = true;
+            if (data.Players.Count > 2000)
+            {
+                foreach (var old in data.Players.Values.OrderBy(p => p.Last).Take(data.Players.Count - 2000).ToList()) data.Players.Remove(old.Id);
+            }
+        }
+
+        private void OnPlayerDisconnected(BasePlayer player, string reason)
+        {
+            Touch(player, false);
+        }
+
+        private void OnPlayerReported(BasePlayer reporter, string targetName, string targetId, string subject, string message, string type)
+        {
+            if (reporter == null) return;
+            data.Reports.Insert(0, new Report
+            {
+                Time = Now(),
+                ReporterId = reporter.UserIDString,
+                ReporterName = reporter.displayName,
+                TargetId = targetId ?? "",
+                TargetName = targetName ?? "",
+                Type = type ?? "",
+                Subject = subject ?? "",
+                Message = message ?? ""
+            });
+            if (data.Reports.Count > 200) data.Reports.RemoveRange(200, data.Reports.Count - 200);
+            dataDirty = true;
+            SaveData();
+            if (settings.NotifyReports)
+            {
+                Push(T("F7 report", "Reporte F7") + ": " + targetName, reporter.displayName + " (" + type + "): " + subject + (string.IsNullOrEmpty(message) ? "" : " - " + message));
+            }
+        }
+
         private void OnPlayerConnected(BasePlayer player)
         {
+            Touch(player, true);
             if (player == null || !settings.NotifyJoins) return;
-            Push("Player joined", player.displayName + " (" + BasePlayer.activePlayerList.Count + " online)");
+            Push(T("Player joined", "Entró un jugador"), player.displayName + " (" + BasePlayer.activePlayerList.Count + T(" online)", " conectados)"));
         }
 
         private void OnPlayerChat(BasePlayer player, string message, ConVar.Chat.ChatChannel channel)
@@ -139,7 +270,7 @@ namespace Oxide.Plugins
                 if (string.IsNullOrWhiteSpace(word)) continue;
                 if (lower.Contains(word.Trim().ToLowerInvariant()))
                 {
-                    Push("Chat alert", player.displayName + ": " + message);
+                    Push(T("Chat alert", "Alerta del chat"), player.displayName + ": " + message);
                     return;
                 }
             }
@@ -364,12 +495,471 @@ namespace Oxide.Plugins
             arg.ReplyWith("Removed.");
         }
 
+        [ConsoleCommand("brava.language")]
+        private void CmdLanguage(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            settings.Language = arg.GetString(0, "en").Trim().ToLowerInvariant() == "es" ? "es" : "en";
+            SaveConfig();
+            arg.ReplyWith("Alert language: " + settings.Language);
+        }
+
+        [ConsoleCommand("brava.reportalerts")]
+        private void CmdReportAlerts(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            settings.NotifyReports = ParseBool(arg.GetString(0, ""), settings.NotifyReports);
+            SaveConfig();
+            arg.ReplyWith("Report alerts: " + settings.NotifyReports);
+        }
+
+        // ---- F7 reports, player history, combat log ----
+
+        [ConsoleCommand("brava.reports")]
+        private void CmdReports(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            arg.ReplyWith(JsonConvert.SerializeObject(data.Reports.Take(Math.Max(1, arg.GetInt(0, 100))).ToList()));
+        }
+
+        [ConsoleCommand("brava.reports.clear")]
+        private void CmdReportsClear(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            data.Reports.Clear();
+            dataDirty = true;
+            SaveData();
+            arg.ReplyWith("Reports cleared.");
+        }
+
+        [ConsoleCommand("brava.history")]
+        private void CmdHistory(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            var online = new HashSet<string>(BasePlayer.activePlayerList.Select(p => p.UserIDString));
+            var list = data.Players.Values.OrderByDescending(p => online.Contains(p.Id)).ThenByDescending(p => p.Last)
+                .Take(Math.Max(1, arg.GetInt(0, 300)))
+                .Select(p => new { p.Id, p.Name, p.First, p.Last, p.Visits, Online = online.Contains(p.Id) })
+                .ToList();
+            arg.ReplyWith(JsonConvert.SerializeObject(list));
+        }
+
+        [ConsoleCommand("brava.combatlog")]
+        private void CmdCombatLog(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            ulong id;
+            if (!ulong.TryParse(arg.GetString(0, ""), out id)) { arg.ReplyWith("Usage: brava.combatlog <steamid> [lines]"); return; }
+            BasePlayer player = BasePlayer.FindAwakeOrSleeping(id.ToString());
+            if (player == null) { arg.ReplyWith(T("That player is not on the server (not connected or sleeping).", "Ese jugador no está en el servidor (ni conectado ni dormido).")); return; }
+            int lines = Math.Max(5, Math.Min(100, arg.GetInt(1, 30)));
+            string log = CombatText(player, lines);
+            arg.ReplyWith(string.IsNullOrWhiteSpace(log) ? T("No combat recorded.", "No hay combate registrado.") : log);
+        }
+
+        private string CombatText(BasePlayer player, int lines)
+        {
+            object combat = player.stats?.combat;
+            if (combat == null) return "";
+            MethodInfo get = combat.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => m.Name == "Get" && m.ReturnType == typeof(string))
+                .OrderBy(m => m.GetParameters().Length).FirstOrDefault();
+            if (get == null) return "";
+            ParameterInfo[] ps = get.GetParameters();
+            var args = new object[ps.Length];
+            for (int i = 0; i < ps.Length; i++)
+            {
+                ParameterInfo p = ps[i];
+                if (i == 0 && p.ParameterType == typeof(int)) args[i] = lines;
+                else if (p.ParameterType == typeof(bool) && p.Name.ToLowerInvariant().Contains("admin")) args[i] = true;
+                else if (p.HasDefaultValue) args[i] = p.DefaultValue ?? (p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null);
+                else args[i] = p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null;
+            }
+            return get.Invoke(combat, args) as string ?? "";
+        }
+
+        // ---- terrain image for the app's player map ----
+
+        [ConsoleCommand("brava.mapimage")]
+        private void CmdMapImage(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            if (mapImage == null)
+            {
+                try
+                {
+                    RenderMap();
+                }
+                catch (Exception e)
+                {
+                    arg.ReplyWith("{\"Error\":" + JsonConvert.SerializeObject(e.GetBaseException().Message) + "}");
+                    return;
+                }
+            }
+            int chunks = (mapImage.Length + Chunk - 1) / Chunk;
+            int index = Math.Max(0, Math.Min(chunks - 1, arg.GetInt(0, 0)));
+            arg.ReplyWith(JsonConvert.SerializeObject(new
+            {
+                Seed = World.Seed,
+                Size = World.Size,
+                Width = mapWidth,
+                Height = mapHeight,
+                Margin = mapMargin,
+                Chunks = chunks,
+                Index = index,
+                Data = mapImage.Substring(index * Chunk, Math.Min(Chunk, mapImage.Length - index * Chunk))
+            }));
+        }
+
+        private void RenderMap()
+        {
+            Type renderer = typeof(BasePlayer).Assembly.GetType("MapImageRenderer");
+            if (renderer == null) throw new Exception("MapImageRenderer not found");
+            MethodInfo render = renderer.GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(m => m.Name == "Render" && m.ReturnType == typeof(byte[]))
+                .OrderByDescending(m => m.GetParameters().Length).FirstOrDefault();
+            if (render == null) throw new Exception("Render method not found");
+            ParameterInfo[] ps = render.GetParameters();
+            var args = new object[ps.Length];
+            int widthAt = -1, heightAt = -1;
+            int margin = 500;
+            for (int i = 0; i < ps.Length; i++)
+            {
+                ParameterInfo p = ps[i];
+                string n = p.Name.ToLowerInvariant();
+                if (p.IsOut)
+                {
+                    if (n.Contains("width")) widthAt = i;
+                    else if (n.Contains("height")) heightAt = i;
+                    args[i] = null;
+                }
+                else if (n == "scale") args[i] = 0.35f;
+                else if (n == "lossy") args[i] = true;
+                else if (n.Contains("transparent")) args[i] = false;
+                else if (n.Contains("margin")) args[i] = margin;
+                else if (p.HasDefaultValue) args[i] = p.DefaultValue;
+                else args[i] = p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null;
+            }
+            var bytes = render.Invoke(null, args) as byte[];
+            if (bytes == null || bytes.Length == 0) throw new Exception("Empty image");
+            mapWidth = widthAt >= 0 ? (int)args[widthAt] : 0;
+            mapHeight = heightAt >= 0 ? (int)args[heightAt] : 0;
+            mapMargin = ps.Any(p => p.Name.ToLowerInvariant().Contains("margin")) ? margin : 0;
+            mapImage = Convert.ToBase64String(bytes);
+        }
+
+        // ---- Carbon AutoWipe calendar ----
+
+        private static string WipeFile()
+        {
+            return Path.Combine(Environment.CurrentDirectory, "carbon", "modules", "AutoWipe", "config.json");
+        }
+
+        private static readonly Regex DateInName = new Regex(@"(\d{4}-\d{2}-\d{2})");
+        private static readonly Regex ClockText = new Regex(@"\d{1,2}:\d{2}\s?(am|pm)", RegexOptions.IgnoreCase);
+
+        private JObject ReadWipes(ConsoleSystem.Arg arg)
+        {
+            string path = WipeFile();
+            if (!File.Exists(path)) { arg.ReplyWith("{\"Error\":\"AutoWipe module config not found\"}"); return null; }
+            return JObject.Parse(File.ReadAllText(path));
+        }
+
+        private void WriteWipes(JObject root)
+        {
+            File.WriteAllText(WipeFile(), root.ToString(Formatting.Indented));
+            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.reloadmodule", "AutoWipe");
+        }
+
+        private static JArray WipeList(JObject root)
+        {
+            return root["Config"]?["AvailableWipes"] as JArray ?? new JArray();
+        }
+
+        [ConsoleCommand("brava.wipes")]
+        private void CmdWipes(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            JObject root = ReadWipes(arg);
+            if (root == null) return;
+            var list = new List<object>();
+            int i = 0;
+            foreach (JToken w in WipeList(root))
+            {
+                string cron = (string)w["Cron"] ?? "";
+                list.Add(new
+                {
+                    Index = i++,
+                    Name = (string)w["WipeName"] ?? "",
+                    Seed = (long?)w["ServerSeed"] ?? 0,
+                    Size = (int?)w["MapSize"] ?? 0,
+                    Cron = cron,
+                    Utc = NextUtc(cron),
+                    Full = ((int?)w["Type (0=fullwipe 1=mapwipe)"] ?? 1) == 0
+                });
+            }
+            arg.ReplyWith(JsonConvert.SerializeObject(new
+            {
+                Enabled = (bool?)root["Enabled"] ?? false,
+                Offset = settings.UtcOffsetHours,
+                CurrentSeed = World.Seed,
+                CurrentSize = World.Size,
+                Wipes = list
+            }));
+        }
+
+        // Unix time of the next run of a "m h dom mon *" cron in UTC, or 0 for other patterns.
+        private static long NextUtc(string cron)
+        {
+            string[] f = cron.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            int m, h, d, mo;
+            if (f.Length != 5 || !int.TryParse(f[0], out m) || !int.TryParse(f[1], out h) || !int.TryParse(f[2], out d) || !int.TryParse(f[3], out mo)) return 0;
+            DateTime now = DateTime.UtcNow;
+            for (int year = now.Year; year <= now.Year + 1; year++)
+            {
+                if (d > DateTime.DaysInMonth(year, mo)) continue;
+                var t = new DateTime(year, mo, d, h, m, 0, DateTimeKind.Utc);
+                if (t > now.AddMinutes(-10)) return new DateTimeOffset(t).ToUnixTimeSeconds();
+            }
+            return 0;
+        }
+
+        [ConsoleCommand("brava.wipes.seed")]
+        private void CmdWipeSeed(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            JObject root = ReadWipes(arg);
+            if (root == null) return;
+            JArray list = WipeList(root);
+            int index = arg.GetInt(0, -1);
+            long seed;
+            if (index < 0 || index >= list.Count) { arg.ReplyWith(T("No wipe with that number.", "No hay un wipe con ese número.")); return; }
+            if (!long.TryParse(arg.GetString(1, ""), out seed) || seed < 1 || seed > int.MaxValue) { arg.ReplyWith(T("The seed must be a number between 1 and 2147483647.", "La semilla debe ser un número entre 1 y 2147483647.")); return; }
+            list[index]["ServerSeed"] = seed;
+            WriteWipes(root);
+            arg.ReplyWith(T("Seed saved.", "Semilla guardada."));
+        }
+
+        [ConsoleCommand("brava.wipes.time")]
+        private void CmdWipeTime(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            DateTime clock;
+            if (!DateTime.TryParseExact(arg.GetString(0, "").Trim(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out clock))
+            {
+                arg.ReplyWith(T("Time must look like 20:00.", "La hora debe verse como 20:00."));
+                return;
+            }
+            JObject root = ReadWipes(arg);
+            if (root == null) return;
+            int changed = 0, skipped = 0;
+            string pretty = clock.ToString("h:mm tt", CultureInfo.InvariantCulture).ToLowerInvariant().Replace(".", "");
+            foreach (JToken w in WipeList(root))
+            {
+                Match date = DateInName.Match((string)w["WipeName"] ?? "");
+                DateTime day;
+                if (!date.Success || !DateTime.TryParseExact(date.Value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out day)) { skipped++; continue; }
+                // Commands run 5 minutes before the wipe; they announce it and restart in 300 seconds.
+                DateTime runUtc = day.Date.Add(clock.TimeOfDay).AddMinutes(-5).AddHours(-settings.UtcOffsetHours);
+                w["Cron"] = runUtc.Minute + " " + runUtc.Hour + " " + runUtc.Day + " " + runUtc.Month + " *";
+                var commands = w["Commands"] as JArray;
+                if (commands != null)
+                {
+                    for (int i = 0; i < commands.Count; i++)
+                    {
+                        string c = (string)commands[i] ?? "";
+                        if (c.StartsWith("say")) commands[i] = ClockText.Replace(c, pretty);
+                    }
+                }
+                changed++;
+            }
+            WriteWipes(root);
+            arg.ReplyWith(T("Wipe time changed on ", "Hora del wipe cambiada en ") + changed + T(" wipes", " wipes") + (skipped > 0 ? T(" (" + skipped + " without a date were left alone)", " (" + skipped + " sin fecha se dejaron igual)") : "") + ".");
+        }
+
+        // ---- Kits plugin editor ----
+
+        private static string KitsFile()
+        {
+            return Path.Combine(Interface.Oxide.DataDirectory, "Kits", "kits_data.json");
+        }
+
+        private static readonly string[] Containers = { "MainItems", "WearItems", "BeltItems" };
+
+        [ConsoleCommand("brava.kits")]
+        private void CmdKits(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            string path = KitsFile();
+            if (!File.Exists(path)) { arg.ReplyWith("{\"Error\":\"Kits data not found\"}"); return; }
+            JObject root = JObject.Parse(File.ReadAllText(path));
+            var list = new List<object>();
+            foreach (JProperty kit in (root["_kits"] as JObject ?? new JObject()).Properties())
+            {
+                JToken k = kit.Value;
+                var items = new List<object>();
+                foreach (string c in Containers)
+                {
+                    foreach (JToken it in k[c] as JArray ?? new JArray())
+                    {
+                        items.Add(new { Container = c.Replace("Items", "").ToLowerInvariant(), Shortname = (string)it["Shortname"] ?? "", Amount = (int?)it["Amount"] ?? 0 });
+                    }
+                }
+                list.Add(new
+                {
+                    Name = kit.Name,
+                    Description = (string)k["Description"] ?? "",
+                    Permission = (string)k["RequiredPermission"] ?? "",
+                    Cooldown = (int?)k["Cooldown"] ?? 0,
+                    MaxUses = (int?)k["MaximumUses"] ?? 0,
+                    Hidden = (bool?)k["IsHidden"] ?? false,
+                    Items = items
+                });
+            }
+            arg.ReplyWith(JsonConvert.SerializeObject(list));
+        }
+
+        // Kits keeps its data in memory and writes it when it unloads, so edit the file while it is unloaded.
+        private string EditKits(Func<JObject, string> change)
+        {
+            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.unload", "Kits");
+            string reply;
+            try
+            {
+                string path = KitsFile();
+                JObject root = JObject.Parse(File.ReadAllText(path));
+                if (root["_kits"] == null) root["_kits"] = new JObject();
+                reply = change(root);
+                if (reply == null)
+                {
+                    File.WriteAllText(path, root.ToString(Formatting.Indented));
+                    reply = T("Kits saved.", "Kits guardados.");
+                }
+            }
+            catch (Exception e)
+            {
+                reply = "Error: " + e.GetBaseException().Message;
+            }
+            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.load", "Kits");
+            return reply;
+        }
+
+        private JObject Kit(JObject root, string name)
+        {
+            return ((JObject)root["_kits"]).Properties().FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Value as JObject;
+        }
+
+        private static JObject NewItem(string shortname, int amount, int position)
+        {
+            return new JObject
+            {
+                ["Shortname"] = shortname, ["DisplayName"] = null, ["Skin"] = 0, ["Amount"] = amount,
+                ["Condition"] = 0, ["MaxCondition"] = 0, ["Ammo"] = 0, ["Ammotype"] = null, ["Position"] = position,
+                ["Frequency"] = -1, ["BlueprintShortname"] = null, ["Text"] = null, ["Contents"] = null, ["Container"] = null
+            };
+        }
+
+        [ConsoleCommand("brava.kits.set")]
+        private void CmdKitSet(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            string name = arg.GetString(0, "").Trim();
+            string field = arg.GetString(1, "").Trim().ToLowerInvariant();
+            string value = arg.GetString(2, "");
+            arg.ReplyWith(EditKits(root =>
+            {
+                JObject kit = Kit(root, name);
+                if (kit == null) return T("No kit called ", "No hay un kit llamado ") + name;
+                int number;
+                switch (field)
+                {
+                    case "description": kit["Description"] = value; break;
+                    case "permission": kit["RequiredPermission"] = value.Trim(); break;
+                    case "hidden": kit["IsHidden"] = ParseBool(value, false); break;
+                    case "cooldown":
+                        if (!int.TryParse(value, out number) || number < 0) return T("Cooldown must be seconds, 0 or more.", "La espera debe ser en segundos, 0 o más.");
+                        kit["Cooldown"] = number; break;
+                    case "uses":
+                        if (!int.TryParse(value, out number) || number < 0) return T("Uses must be 0 (unlimited) or more.", "Los usos deben ser 0 (ilimitado) o más.");
+                        kit["MaximumUses"] = number; break;
+                    default: return "Fields: description, permission, hidden, cooldown, uses";
+                }
+                return null;
+            }));
+        }
+
+        [ConsoleCommand("brava.kits.item")]
+        private void CmdKitItem(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            string name = arg.GetString(0, "").Trim();
+            string where = arg.GetString(1, "main").Trim().ToLowerInvariant();
+            string shortname = arg.GetString(2, "").Trim().ToLowerInvariant();
+            int amount = arg.GetInt(3, 1);
+            string container = where == "wear" ? "WearItems" : where == "belt" ? "BeltItems" : "MainItems";
+            int slots = container == "WearItems" ? 8 : container == "BeltItems" ? 6 : 24;
+            if (ItemManager.FindItemDefinition(shortname) == null) { arg.ReplyWith(T("Unknown item: ", "Item desconocido: ") + shortname); return; }
+            arg.ReplyWith(EditKits(root =>
+            {
+                JObject kit = Kit(root, name);
+                if (kit == null) return T("No kit called ", "No hay un kit llamado ") + name;
+                var items = kit[container] as JArray;
+                if (items == null) { items = new JArray(); kit[container] = items; }
+                JToken existing = items.FirstOrDefault(i => (string)i["Shortname"] == shortname);
+                if (amount <= 0)
+                {
+                    if (existing == null) return T("That item is not in this part of the kit.", "Ese item no está en esa parte del kit.");
+                    existing.Remove();
+                    return null;
+                }
+                if (existing != null) { existing["Amount"] = amount; return null; }
+                var used = new HashSet<int>(items.Select(i => (int?)i["Position"] ?? -1));
+                int pos = Enumerable.Range(0, slots).FirstOrDefault(p => !used.Contains(p));
+                if (used.Contains(pos)) return T("That part of the kit is full.", "Esa parte del kit está llena.");
+                items.Add(NewItem(shortname, amount, pos));
+                return null;
+            }));
+        }
+
+        [ConsoleCommand("brava.kits.add")]
+        private void CmdKitAdd(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            string name = arg.GetString(0, "").Trim().ToLowerInvariant();
+            if (!Regex.IsMatch(name, "^[a-z0-9_]{2,24}$")) { arg.ReplyWith(T("Use 2 to 24 letters, numbers or _.", "Usa de 2 a 24 letras, números o _.")); return; }
+            arg.ReplyWith(EditKits(root =>
+            {
+                if (Kit(root, name) != null) return T("That kit already exists.", "Ese kit ya existe.");
+                root["_kits"][name] = new JObject
+                {
+                    ["Name"] = name, ["Description"] = "", ["RequiredPermission"] = "", ["MaximumUses"] = 0, ["RequiredAuth"] = 0,
+                    ["Cooldown"] = 3600, ["Cost"] = 0, ["IsHidden"] = true, ["CopyPasteFile"] = "", ["KitImage"] = "",
+                    ["MainItems"] = new JArray(), ["WearItems"] = new JArray(), ["BeltItems"] = new JArray()
+                };
+                return null;
+            }));
+        }
+
+        [ConsoleCommand("brava.kits.delete")]
+        private void CmdKitDelete(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            string name = arg.GetString(0, "").Trim();
+            arg.ReplyWith(EditKits(root =>
+            {
+                JProperty kit = ((JObject)root["_kits"]).Properties().FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+                if (kit == null) return T("No kit called ", "No hay un kit llamado ") + name;
+                kit.Remove();
+                return null;
+            }));
+        }
+
         [ConsoleCommand("brava.test")]
         private void CmdTest(ConsoleSystem.Arg arg)
         {
             if (!Allowed(arg)) return;
             if (string.IsNullOrWhiteSpace(settings.Topic)) { arg.ReplyWith("Set a topic first."); return; }
-            Push("Brava test", "Alerts from " + ConVar.Server.hostname + " are working.");
+            Push(T("Brava test", "Prueba de Brava"), T("Alerts from ", "Las alertas de ") + ConVar.Server.hostname + T(" are working.", " funcionan."));
             arg.ReplyWith("Test sent.");
         }
     }

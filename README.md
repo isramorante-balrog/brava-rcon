@@ -24,10 +24,19 @@ Not affiliated with or endorsed by Facepunch Studios. "Rust" is a trademark of F
 - Fresh-wipe server name: the companion plugin shows a different name for some hours after each wipe
 - English and Spanish, picked from the phone language
 
-## Planned
+## Needs the companion plugin
 
-- Server-down alert (the plugin cannot report its own server being off)
-- Kits editor, terrain image behind the player map
+These features read data that WebRCON does not offer, so they need `server-plugin/BravaCompanion.cs`
+on the server (Carbon or Oxide):
+
+- F7 reports, with phone alerts
+- Player history (everyone who has joined), ban by SteamID for players who left
+- Combat log of any player on the server
+- Wipe calendar: see and change seeds and the wipe time of Carbon's AutoWipe module
+- Kits editor for the Kits plugin (items, wait time, uses, permission)
+- Terrain image behind the player map
+
+The server-down alert works without the plugin: the phone checks the server every 15 minutes.
 
 ## Install
 

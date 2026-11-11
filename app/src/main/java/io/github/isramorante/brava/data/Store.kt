@@ -43,6 +43,14 @@ class Store(context: Context) {
     fun loadLock(): Boolean = prefs.getBoolean("lock", false)
     fun saveLock(on: Boolean) = prefs.edit().putBoolean("lock", on).apply()
 
+    /** Servers checked in the background so the phone can warn when one goes down. */
+    fun loadWatched(): Set<String> = prefs.getStringSet("watched", emptySet())?.toSet() ?: emptySet()
+    fun saveWatched(ids: Set<String>) = prefs.edit().putStringSet("watched", ids).apply()
+
+    /** Time of the newest F7 report the admin has already opened, per server. */
+    fun loadReportsSeen(serverId: String): Long = prefs.getLong("reports_seen_$serverId", 0L)
+    fun saveReportsSeen(serverId: String, time: Long) = prefs.edit().putLong("reports_seen_$serverId", time).apply()
+
     fun loadSkippedBuild(): Int = prefs.getInt("skipped_build", 0)
     fun saveSkippedBuild(build: Int) = prefs.edit().putInt("skipped_build", build).apply()
 

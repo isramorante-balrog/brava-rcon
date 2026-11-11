@@ -2,6 +2,12 @@ package io.github.isramorante.brava.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,11 +57,13 @@ fun ConnBadge(vm: AppViewModel) {
 }
 
 @Composable
-private fun Stat(label: String, value: String, sub: String, modifier: Modifier = Modifier) {
-    Panel(modifier) {
+private fun Stat(label: String, value: String, sub: String, modifier: Modifier = Modifier, fraction: Float? = null) {
+    Panel(modifier.fillMaxHeight()) {
         Label(label)
-        Text(value, fontSize = 30.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(sub, color = C.soft, fontSize = 14.sp, maxLines = 1)
+        // Long values get a smaller size so they never wrap or get cut in a half-width card.
+        Text(value, fontSize = if (value.length > 7) 24.sp else 30.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (fraction != null) Bar(fraction, if (fraction > 0.85f) C.rust else C.olive)
+        Text(sub, color = C.soft, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -83,7 +91,7 @@ fun DashboardScreen(vm: AppViewModel) {
             if (info != null && info.hostname.isNotBlank()) {
                 Text(info.hostname, color = C.soft, fontSize = 14.sp, maxLines = 2)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Stat(
                     tr("Players", "Jugadores"),
                     if (info == null) "–" else "${info.players} / ${info.maxPlayers}",
@@ -92,20 +100,21 @@ fun DashboardScreen(vm: AppViewModel) {
                 )
                 Stat("FPS", if (info == null) "–" else info.framerate.toInt().toString(), tr("Server frame rate", "FPS del servidor"), Modifier.weight(1f))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 val host = vm.panel
                 if (host != null && host.memoryLimitBytes > 0) {
                     Stat(
                         "RAM",
-                        "${fmtGb(host.memoryBytes)} / ${fmtGb(host.memoryLimitBytes)} GB",
-                        tr("Whole server, from the hosting panel", "Todo el servidor, según el panel"),
+                        "${fmtGb(host.memoryBytes)} GB",
+                        tr("of ${fmtGb(host.memoryLimitBytes)} GB", "de ${fmtGb(host.memoryLimitBytes)} GB"),
                         Modifier.weight(1f),
+                        host.memoryBytes.toFloat() / host.memoryLimitBytes,
                     )
                 } else {
                     Stat(
                         tr("Game memory", "Memoria del juego"),
                         if (info == null) "–" else "${info.memory} MB",
-                        tr("Rust only, not the whole server", "Solo Rust, no todo el servidor"),
+                        tr("Rust only", "Solo Rust"),
                         Modifier.weight(1f),
                     )
                 }
@@ -117,6 +126,31 @@ fun DashboardScreen(vm: AppViewModel) {
                 )
             }
 
+            val next = vm.wipes?.next
+            val unseen = vm.unseenReports
+            if (unseen > 0) {
+                BravaButton(
+                    tr("$unseen new F7 reports", "$unseen reportes F7 nuevos"),
+                    { vm.tab = 4; vm.morePage = "reports" },
+                    Modifier.fillMaxWidth(),
+                    Kind.DangerSolid,
+                )
+            }
+            if (next != null) {
+                Row(
+                    Modifier.fillMaxWidth().background(C.panel).border(1.dp, C.line)
+                        .clickable { vm.tab = 4; vm.morePage = "wipes" }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Label(if (next.forced) tr("Next wipe · forced", "Próximo wipe · forzado") else tr("Next wipe", "Próximo wipe"))
+                        Text(fmtDate(next.wipeAt), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(tr("Seed ${next.seed} · size ${next.size}", "Semilla ${next.seed} · tamaño ${next.size}"), color = C.soft, fontSize = 14.sp)
+                    }
+                    Text("›", color = C.mute, fontSize = 28.sp)
+                }
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Label(tr("Quick commands", "Comandos rápidos"), Modifier.weight(1f))
                 BravaButton(if (editQuick) tr("Done", "Listo") else tr("Edit", "Editar"), { editQuick = !editQuick }, height = 44.dp)
@@ -126,7 +160,7 @@ fun DashboardScreen(vm: AppViewModel) {
                     pair.forEach { item ->
                         BravaButton(
                             if (editQuick) "✕ ${item.label}" else item.label,
-                            { if (editQuick) removing = item else vm.run(item.command) },
+                            { if (editQuick) removing = item else vm.runQuick(item.command) },
                             Modifier.weight(1f),
                             if (editQuick) Kind.Danger else Kind.Neutral,
                         )
@@ -143,11 +177,25 @@ fun DashboardScreen(vm: AppViewModel) {
                 BravaButton(tr("Restart", "Reiniciar"), { restartOpen = true }, Modifier.weight(1f), Kind.Danger)
             }
 
-            val last = vm.console.lastOrNull()
-            if (last != null) {
-                Panel(Modifier.fillMaxWidth()) {
-                    Label(tr("Latest", "Lo último"))
-                    Text(last.text, color = lineColor(last.type), fontSize = 14.sp, maxLines = 3)
+            val reply = vm.lastReply
+            if (reply != null) {
+                Column(
+                    Modifier.fillMaxWidth().background(C.black).border(1.dp, C.line).clickable { vm.tab = 2 }.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Label(tr("Reply to ", "Respuesta a ") + reply.first, Modifier.weight(1f))
+                        Text(tr("Console ›", "Consola ›"), color = C.mute, fontSize = 13.sp)
+                    }
+                    Text(reply.second, color = C.ink, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 14, overflow = TextOverflow.Ellipsis)
+                }
+            } else {
+                val last = vm.console.lastOrNull()
+                if (last != null) {
+                    Panel(Modifier.fillMaxWidth()) {
+                        Label(tr("Latest", "Lo último"))
+                        Text(last.text, color = lineColor(last.type), fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
         }

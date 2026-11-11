@@ -38,6 +38,9 @@ fun PlayersScreen(vm: AppViewModel) {
     var query by remember { mutableStateOf("") }
     var openId by remember { mutableStateOf<String?>(null) }
     var dialog by remember { mutableStateOf<Pair<String, Player>?>(null) }
+    // For players found in the history, who may be offline: kind, SteamID, name.
+    var idDialog by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+    var showHistory by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val list = vm.players.filter { query.isBlank() || it.name.contains(query, true) || it.steamId.contains(query) }
 
@@ -45,17 +48,25 @@ fun PlayersScreen(vm: AppViewModel) {
         Header(tr("Players", "Jugadores")) {
             Text(tr("${vm.players.size} online", "${vm.players.size} conectados"), color = C.soft, fontSize = 15.sp)
         }
-        Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                BravaButton(tr("Online", "Conectados"), { showHistory = false }, Modifier.weight(1f), if (!showHistory) Kind.DangerSolid else Kind.Neutral, 44.dp)
+                BravaButton(tr("History", "Historial"), { showHistory = true }, Modifier.weight(1f), if (showHistory) Kind.DangerSolid else Kind.Neutral, 44.dp)
+            }
             Field(query, { query = it }, tr("Name or SteamID", "Nombre o SteamID"))
         }
-        if (list.isEmpty()) {
+        if (showHistory) {
+            Box(Modifier.weight(1f)) {
+                HistoryList(vm, query, onBan = { id, name -> idDialog = Triple("ban", id, name) }, onNote = { id, name -> idDialog = Triple("note", id, name) })
+            }
+        } else if (list.isEmpty()) {
             Text(
                 if (vm.players.isEmpty()) tr("Nobody is connected.", "No hay nadie conectado.") else tr("No matches.", "Sin resultados."),
                 Modifier.padding(20.dp),
                 color = C.mute,
             )
         }
-        LazyColumn(Modifier.weight(1f)) {
+        if (!showHistory) LazyColumn(Modifier.weight(1f)) {
             items(list, key = { it.steamId }) { p ->
                 val open = openId == p.steamId
                 Column(Modifier.fillMaxWidth().background(if (open) C.panel else C.bg)) {
@@ -106,6 +117,7 @@ fun PlayersScreen(vm: AppViewModel) {
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 BravaButton(tr("Mute", "Silenciar"), { vm.mute(p, true) }, Modifier.weight(1f), height = 48.dp)
                                 BravaButton(tr("Unmute", "Desilenciar"), { vm.mute(p, false) }, Modifier.weight(1f), height = 48.dp)
+                                BravaButton("Combat log", { vm.loadCombat(p.steamId, p.name) }, Modifier.weight(1f), height = 48.dp)
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 BravaButton(tr("Kick", "Expulsar"), { dialog = "kick" to p }, Modifier.weight(1f), Kind.Danger, 48.dp)
@@ -119,6 +131,29 @@ fun PlayersScreen(vm: AppViewModel) {
         }
     }
 
+    CombatDialog(vm)
+    idDialog?.let { (kind, id, name) ->
+        val close = { idDialog = null }
+        if (kind == "ban") {
+            PromptDialog(
+                title = tr("Ban $name", "Banear a $name"),
+                labels = listOf(tr("Reason (saved with the ban)", "Motivo (se guarda con el ban)")),
+                confirm = "Ban",
+                onConfirm = { vm.banId(id, name, it[0]) },
+                onDismiss = close,
+            )
+        } else {
+            PromptDialog(
+                title = tr("Note on $name", "Nota sobre $name"),
+                labels = listOf(tr("Only stored on this phone", "Solo se guarda en este teléfono")),
+                defaults = listOf(vm.notes[id] ?: ""),
+                confirm = tr("Save", "Guardar"),
+                singleLine = false,
+                onConfirm = { vm.setNote(id, it[0]) },
+                onDismiss = close,
+            )
+        }
+    }
     dialog?.let { (kind, p) ->
         val close = { dialog = null }
         when (kind) {

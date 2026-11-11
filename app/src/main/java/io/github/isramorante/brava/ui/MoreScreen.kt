@@ -32,33 +32,47 @@ import io.github.isramorante.brava.tr
 
 @Composable
 fun MoreScreen(vm: AppViewModel) {
-    var page by remember { mutableStateOf("") }
-    BackHandler(enabled = page.isNotEmpty()) { page = "" }
+    val page = vm.morePage
+    val back = { vm.morePage = "" }
+    BackHandler(enabled = page.isNotEmpty()) { back() }
     when (page) {
-        "bans" -> BansPage(vm) { page = "" }
-        "plugins" -> PluginsPage(vm) { page = "" }
-        "panel" -> PanelPage(vm) { page = "" }
-        "perms" -> PermsPage(vm) { page = "" }
-        "map" -> MapPage(vm) { page = "" }
-        "alerts" -> AlertsPage(vm) { page = "" }
-        "edit" -> ServerForm(vm.active, onSave = { vm.saveServer(it); page = "" }, onCancel = { page = "" })
+        "bans" -> BansPage(vm, back)
+        "plugins" -> PluginsPage(vm, back)
+        "panel" -> PanelPage(vm, back)
+        "perms" -> PermsPage(vm, back)
+        "map" -> MapPage(vm, back)
+        "alerts" -> AlertsPage(vm, back)
+        "reports" -> ReportsPage(vm, back)
+        "wipes" -> WipesPage(vm, back)
+        "kits" -> KitsPage(vm, back)
+        "edit" -> ServerForm(vm.active, onSave = { vm.saveServer(it); back() }, onCancel = back)
         else -> Column(Modifier.fillMaxSize()) {
             Header(tr("More", "Más"))
             Column(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                val go = { name: String -> vm.morePage = name }
                 Label(tr("Moderation", "Moderación"))
-                BravaButton(tr("Ban list", "Lista de bans"), { page = "bans" }, Modifier.fillMaxWidth())
-                BravaButton(tr("Permissions", "Permisos"), { page = "perms" }, Modifier.fillMaxWidth())
-                BravaButton(tr("Player map", "Mapa de jugadores"), { page = "map" }, Modifier.fillMaxWidth())
-                Label(tr("Automation", "Automatización"), Modifier.padding(top = 8.dp))
-                BravaButton(tr("Alerts and schedules", "Alertas y programados"), { page = "alerts" }, Modifier.fillMaxWidth())
+                val unseen = vm.unseenReports
+                BravaButton(
+                    tr("F7 reports", "Reportes F7") + if (unseen > 0) " · $unseen " + tr("new", "nuevos") else "",
+                    { go("reports") },
+                    Modifier.fillMaxWidth(),
+                    if (unseen > 0) Kind.DangerSolid else Kind.Neutral,
+                )
+                BravaButton(tr("Ban list", "Lista de bans"), { go("bans") }, Modifier.fillMaxWidth())
+                BravaButton(tr("Player map", "Mapa de jugadores"), { go("map") }, Modifier.fillMaxWidth())
+                BravaButton(tr("Permissions", "Permisos"), { go("perms") }, Modifier.fillMaxWidth())
                 Label(tr("Server", "Servidor"), Modifier.padding(top = 8.dp))
-                BravaButton("Plugins", { page = "plugins" }, Modifier.fillMaxWidth())
-                BravaButton(tr("Hosting panel", "Panel del hosting"), { page = "panel" }, Modifier.fillMaxWidth())
+                BravaButton(tr("Wipe calendar", "Calendario de wipes"), { go("wipes") }, Modifier.fillMaxWidth())
+                BravaButton("Kits", { go("kits") }, Modifier.fillMaxWidth())
+                BravaButton("Plugins", { go("plugins") }, Modifier.fillMaxWidth())
+                BravaButton(tr("Hosting panel", "Panel del hosting"), { go("panel") }, Modifier.fillMaxWidth())
+                Label(tr("Automation", "Automatización"), Modifier.padding(top = 8.dp))
+                BravaButton(tr("Alerts and schedules", "Alertas y programados"), { go("alerts") }, Modifier.fillMaxWidth())
                 Label(tr("Connection", "Conexión"), Modifier.padding(top = 8.dp))
-                BravaButton(tr("Edit this server", "Editar este servidor"), { page = "edit" }, Modifier.fillMaxWidth())
+                BravaButton(tr("Edit this server", "Editar este servidor"), { go("edit") }, Modifier.fillMaxWidth())
                 BravaButton(tr("Switch server", "Cambiar de servidor"), { vm.leave() }, Modifier.fillMaxWidth(), Kind.Danger)
                 Label(tr("App version", "Versión de la app"), Modifier.padding(top = 8.dp))
                 UpdateRow(vm)
@@ -84,13 +98,20 @@ fun SubHeader(title: String, onBack: () -> Unit) {
 @Composable
 private fun BansPage(vm: AppViewModel, onBack: () -> Unit) {
     var removing by remember { mutableStateOf<Ban?>(null) }
-    LaunchedEffect(Unit) { vm.loadBans() }
+    var adding by remember { mutableStateOf(false) }
+    LaunchedEffect(vm.bans == null) { if (vm.bans == null) vm.loadBans() }
     Column(Modifier.fillMaxSize()) {
         SubHeader(tr("Ban list", "Lista de bans"), onBack)
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            BravaButton(tr("Ban by SteamID", "Banear por SteamID"), { adding = true }, Modifier.fillMaxWidth(), Kind.DangerSolid)
+            Text(
+                tr("Works for players who already left. Find SteamIDs in Players → History.", "Sirve para jugadores que ya se fueron. Los SteamID están en Jugadores → Historial."),
+                color = C.mute,
+                fontSize = 13.sp,
+            )
             val bans = vm.bans
             when {
                 bans == null && vm.bansRaw.isBlank() -> Text(tr("Loading…", "Cargando…"), color = C.mute)
@@ -106,6 +127,15 @@ private fun BansPage(vm: AppViewModel, onBack: () -> Unit) {
                 }
             }
         }
+    }
+    if (adding) {
+        PromptDialog(
+            title = tr("Ban by SteamID", "Banear por SteamID"),
+            labels = listOf("SteamID (17 " + tr("digits", "dígitos") + ")", tr("Name (optional)", "Nombre (opcional)"), tr("Reason", "Motivo")),
+            confirm = "Ban",
+            onConfirm = { vm.banId(it[0], it[1], it[2]) },
+            onDismiss = { adding = false },
+        )
     }
     removing?.let { ban ->
         ConfirmDialog(

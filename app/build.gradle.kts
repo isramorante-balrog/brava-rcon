@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
-        versionName = "0.3." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+        versionName = "0.4." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
     }
 
     signingConfigs {
@@ -63,6 +63,7 @@ dependencies {
     implementation("androidx.security:security-crypto:1.0.0")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

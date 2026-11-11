@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Alerts when a watched server goes down (Android 13 and newer ask the user). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Lets the built-in updater hand a downloaded build to the system installer.
          Google Play does not allow this for most apps: remove it for a Play release. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

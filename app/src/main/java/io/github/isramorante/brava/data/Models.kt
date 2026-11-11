@@ -83,6 +83,8 @@ data class CompanionCfg(
     @SerialName("Schedules") val schedules: List<ScheduleItem> = emptyList(),
     @SerialName("FreshHostname") val freshHostname: String = "",
     @SerialName("FreshHours") val freshHours: Double = 48.0,
+    @SerialName("Language") val language: String = "en",
+    @SerialName("NotifyReports") val notifyReports: Boolean = true,
 )
 
 data class MapDot(val steamId: String, val name: String, val x: Float, val z: Float)
@@ -92,3 +94,85 @@ data class Ban(val steamId: String, val name: String, val reason: String)
 data class LogLine(val time: Long, val text: String, val type: String)
 
 data class ChatMsg(val time: Long, val name: String, val text: String, val team: Boolean, val mine: Boolean = false)
+
+/** An F7 report kept by the companion plugin. Times are Unix seconds. */
+@Serializable
+data class Report(
+    @SerialName("Time") val time: Long = 0,
+    @SerialName("ReporterId") val reporterId: String = "",
+    @SerialName("ReporterName") val reporterName: String = "",
+    @SerialName("TargetId") val targetId: String = "",
+    @SerialName("TargetName") val targetName: String = "",
+    @SerialName("Type") val type: String = "",
+    @SerialName("Subject") val subject: String = "",
+    @SerialName("Message") val message: String = "",
+)
+
+/** A player the companion plugin has seen on the server. */
+@Serializable
+data class SeenPlayer(
+    @SerialName("Id") val id: String = "",
+    @SerialName("Name") val name: String = "",
+    @SerialName("First") val first: Long = 0,
+    @SerialName("Last") val last: Long = 0,
+    @SerialName("Visits") val visits: Int = 0,
+    @SerialName("Online") val online: Boolean = false,
+)
+
+@Serializable
+data class WipeEntry(
+    @SerialName("Index") val index: Int = 0,
+    @SerialName("Name") val name: String = "",
+    @SerialName("Seed") val seed: Long = 0,
+    @SerialName("Size") val size: Int = 0,
+    @SerialName("Cron") val cron: String = "",
+    @SerialName("Utc") val utc: Long = 0,
+    @SerialName("Full") val full: Boolean = false,
+) {
+    /** The commands run 5 minutes before the wipe, so the new map starts at this time. */
+    val wipeAt: Long get() = if (utc > 0) utc + 5 * 60 else 0
+    val forced: Boolean get() = name.startsWith("Forzado", ignoreCase = true) || name.contains("forced", ignoreCase = true)
+}
+
+@Serializable
+data class WipeCalendar(
+    @SerialName("Enabled") val enabled: Boolean = false,
+    @SerialName("Offset") val offset: Double = 0.0,
+    @SerialName("CurrentSeed") val currentSeed: Long = 0,
+    @SerialName("CurrentSize") val currentSize: Int = 0,
+    @SerialName("Wipes") val wipes: List<WipeEntry> = emptyList(),
+) {
+    val next: WipeEntry? get() {
+        val now = System.currentTimeMillis() / 1000
+        return wipes.filter { it.wipeAt > now }.minByOrNull { it.wipeAt }
+    }
+}
+
+@Serializable
+data class KitItem(
+    @SerialName("Container") val container: String = "main",
+    @SerialName("Shortname") val shortname: String = "",
+    @SerialName("Amount") val amount: Int = 0,
+)
+
+@Serializable
+data class KitInfo(
+    @SerialName("Name") val name: String = "",
+    @SerialName("Description") val description: String = "",
+    @SerialName("Permission") val permission: String = "",
+    @SerialName("Cooldown") val cooldown: Int = 0,
+    @SerialName("MaxUses") val maxUses: Int = 0,
+    @SerialName("Hidden") val hidden: Boolean = false,
+    @SerialName("Items") val items: List<KitItem> = emptyList(),
+)
+
+@Serializable
+data class MapChunk(
+    @SerialName("Seed") val seed: Long = 0,
+    @SerialName("Size") val size: Int = 0,
+    @SerialName("Margin") val margin: Int = 0,
+    @SerialName("Chunks") val chunks: Int = 0,
+    @SerialName("Index") val index: Int = 0,
+    @SerialName("Data") val data: String = "",
+    @SerialName("Error") val error: String = "",
+)

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,8 +58,8 @@ fun BravaApp(vm: AppViewModel, unlock: () -> Unit, canLock: () -> Boolean) {
             ServersScreen(vm, canLock)
         } else {
             UpdatePrompt(vm)
-            var tab by rememberSaveable { mutableIntStateOf(0) }
-            BackHandler { if (tab != 0) tab = 0 else vm.leave() }
+            val tab = vm.tab
+            BackHandler { if (tab != 0) vm.tab = 0 else vm.leave() }
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when (tab) {
@@ -69,14 +70,14 @@ fun BravaApp(vm: AppViewModel, unlock: () -> Unit, canLock: () -> Boolean) {
                         else -> MoreScreen(vm)
                     }
                 }
-                TabBar(tab) { tab = it }
+                TabBar(tab, vm.unseenReports > 0) { vm.tab = it }
             }
         }
     }
 }
 
 @Composable
-private fun TabBar(selected: Int, onSelect: (Int) -> Unit) {
+private fun TabBar(selected: Int, moreDot: Boolean, onSelect: (Int) -> Unit) {
     val labels = listOf(tr("HOME", "INICIO"), tr("PLAYERS", "JUGADORES"), tr("CONSOLE", "CONSOLA"), "CHAT", tr("MORE", "MÁS"))
     Column(Modifier.fillMaxWidth().background(C.black)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
@@ -94,7 +95,11 @@ private fun TabBar(selected: Int, onSelect: (Int) -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
                     ) {
-                        TabIcon(i, color)
+                        Box {
+                            TabIcon(i, color)
+                            // A small mark on "More" when there are F7 reports nobody has opened.
+                            if (i == 4 && moreDot) Box(Modifier.align(Alignment.TopEnd).size(8.dp).background(C.rust))
+                        }
                         Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp, maxLines = 1)
                     }
                 }
