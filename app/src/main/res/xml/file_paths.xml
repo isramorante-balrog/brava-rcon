@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Downloaded updates wait here until the system installer reads them. -->
+    <cache-path name="updates" path="updates/" />
+</paths>

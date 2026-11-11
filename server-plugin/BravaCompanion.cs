@@ -1,5 +1,5 @@
 // BravaCompanion - server side of the Brava RCON Android app.
-// Sends phone alerts through ntfy and runs scheduled commands.
+// Sends phone alerts through ntfy, runs scheduled commands and tags the server name after a wipe.
 // Install: copy this file into carbon/plugins or oxide/plugins.
 // License: GPL-3.0
 
@@ -10,7 +10,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.0.1")]
+    [Info("BravaCompanion", "Brava RCON", "1.1.0")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -32,12 +32,16 @@ namespace Oxide.Plugins
             public bool NotifyStart = true;
             public double UtcOffsetHours = 0;
             public List<ScheduleItem> Schedules = new List<ScheduleItem>();
+            // Server name used while the map is fresh. {date} becomes the wipe day (dd/MM). Empty turns it off.
+            public string FreshHostname = "";
+            public double FreshHours = 48;
         }
 
         private Settings settings = new Settings();
         private readonly Dictionary<int, string> lastDailyRun = new Dictionary<int, string>();
         private readonly Dictionary<int, DateTime> nextRepeat = new Dictionary<int, DateTime>();
         private bool wiped;
+        private string baseHostname = "";
 
         protected override void LoadDefaultConfig()
         {
@@ -74,10 +78,50 @@ namespace Oxide.Plugins
 
         private void OnServerInitialized(bool initial)
         {
+            baseHostname = ConVar.Server.hostname;
+            ApplyHostname();
             timer.Every(20f, Tick);
             if (wiped && settings.NotifyWipe) Push("Wipe finished", ConVar.Server.hostname + " is up with a new map.");
             else if (initial && settings.NotifyStart) Push("Server started", ConVar.Server.hostname + " is online.");
             wiped = false;
+        }
+
+        private void Unload()
+        {
+            // Put the normal name back so a reload does not mistake the tagged name for the normal one.
+            if (!string.IsNullOrEmpty(baseHostname)) ConVar.Server.hostname = baseHostname;
+        }
+
+        // ---- fresh-wipe server name ----
+
+        private DateTime WipeTimeUtc()
+        {
+            return SaveRestore.SaveCreatedTime;
+        }
+
+        private double HoursSinceWipe()
+        {
+            return (DateTime.UtcNow - WipeTimeUtc()).TotalHours;
+        }
+
+        private bool IsFresh()
+        {
+            double hours = HoursSinceWipe();
+            return !string.IsNullOrWhiteSpace(settings.FreshHostname) && settings.FreshHours > 0 && hours >= 0 && hours < settings.FreshHours;
+        }
+
+        private void ApplyHostname()
+        {
+            if (string.IsNullOrEmpty(baseHostname)) return;
+            string wanted = baseHostname;
+            if (IsFresh())
+            {
+                string date = WipeTimeUtc().AddHours(settings.UtcOffsetHours).ToString("dd/MM", System.Globalization.CultureInfo.InvariantCulture);
+                wanted = settings.FreshHostname.Replace("{date}", date);
+            }
+            if (ConVar.Server.hostname == wanted) return;
+            ConVar.Server.hostname = wanted;
+            Puts("Server name set to: " + wanted);
         }
 
         private void OnPlayerConnected(BasePlayer player)
@@ -127,6 +171,7 @@ namespace Oxide.Plugins
 
         private void Tick()
         {
+            ApplyHostname();
             DateTime now = LocalNow();
             string hhmm = now.ToString("HH:mm");
             string today = now.ToString("yyyy-MM-dd");
@@ -184,6 +229,21 @@ namespace Oxide.Plugins
         {
             if (!Allowed(arg)) return;
             arg.ReplyWith(JsonConvert.SerializeObject(settings));
+        }
+
+        [ConsoleCommand("brava.wipetag")]
+        private void CmdWipeTag(ConsoleSystem.Arg arg)
+        {
+            if (!Allowed(arg)) return;
+            settings.FreshHostname = arg.GetString(0, "").Trim();
+            double hours;
+            if (double.TryParse(arg.GetString(1, ""), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out hours) && hours >= 0 && hours <= 720)
+            {
+                settings.FreshHours = hours;
+            }
+            SaveConfig();
+            ApplyHostname();
+            arg.ReplyWith("Wipe tag saved. Map age: " + HoursSinceWipe().ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " h. Name now: " + ConVar.Server.hostname);
         }
 
         [ConsoleCommand("brava.topic")]

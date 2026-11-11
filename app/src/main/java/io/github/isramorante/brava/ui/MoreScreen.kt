@@ -60,6 +60,8 @@ fun MoreScreen(vm: AppViewModel) {
                 Label(tr("Connection", "Conexión"), Modifier.padding(top = 8.dp))
                 BravaButton(tr("Edit this server", "Editar este servidor"), { page = "edit" }, Modifier.fillMaxWidth())
                 BravaButton(tr("Switch server", "Cambiar de servidor"), { vm.leave() }, Modifier.fillMaxWidth(), Kind.Danger)
+                Label(tr("App version", "Versión de la app"), Modifier.padding(top = 8.dp))
+                UpdateRow(vm)
                 Text(
                     "Brava - Complete Rust RCON · GPL-3.0\n" + tr(
                         "Not affiliated with Facepunch Studios.",

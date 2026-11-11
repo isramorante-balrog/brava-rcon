@@ -24,6 +24,9 @@ import io.github.isramorante.brava.panel.PanelStatus
 import io.github.isramorante.brava.rcon.ConnState
 import io.github.isramorante.brava.rcon.RconClient
 import io.github.isramorante.brava.rcon.RconMessage
+import io.github.isramorante.brava.update.Release
+import io.github.isramorante.brava.update.Updater
+import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
@@ -35,6 +38,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
     val rcon = RconClient()
     private val panelApi = PanelApi()
+    private val updater = Updater(app)
+    private var updateFile: File? = null
+    val installedBuild: Int = try { updater.installedBuild } catch (e: Exception) { 0 }
 
     var servers by mutableStateOf(store.loadServers())
         private set
@@ -78,10 +84,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var companionState by mutableStateOf("loading")
         private set
 
+    var update by mutableStateOf<Release?>(null)
+        private set
+    // idle, checking, current, available, downloading, ready
+    var updateState by mutableStateOf("idle")
+        private set
+    var updateProgress by mutableStateOf(0f)
+        private set
+    var updateError by mutableStateOf<String?>(null)
+        private set
+    var updatePrompt by mutableStateOf(false)
+        private set
+
     val console = mutableStateListOf<LogLine>()
     val chat = mutableStateListOf<ChatMsg>()
 
     init {
+        checkUpdate(manual = false)
         viewModelScope.launch { rcon.messages.collect { onMessage(it) } }
         viewModelScope.launch {
             rcon.state.collect { state ->
@@ -357,6 +376,71 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             loadCompanion()
         }
+    }
+
+    // ---- app updates ----
+
+    fun checkUpdate(manual: Boolean) {
+        if (updateState == "checking" || updateState == "downloading") return
+        updateState = "checking"
+        updateError = null
+        viewModelScope.launch {
+            try {
+                val newest = updater.latest()
+                if (newest != null && newest.build > installedBuild) {
+                    if (update?.build != newest.build) updateFile = null
+                    update = newest
+                    updateState = if (updateFile != null) "ready" else "available"
+                    // Ask once per build on start-up; the button in the app always works.
+                    if (!manual && store.loadSkippedBuild() != newest.build) updatePrompt = true
+                } else {
+                    update = null
+                    updateState = "current"
+                }
+            } catch (e: Exception) {
+                updateState = "idle"
+                if (manual) updateError = e.message ?: e.javaClass.simpleName
+            }
+        }
+    }
+
+    fun installUpdate() {
+        val release = update ?: return
+        if (updateState == "downloading") return
+        updateError = null
+        val ready = updateFile
+        if (ready != null && ready.exists()) {
+            launchInstaller(ready)
+            return
+        }
+        updateState = "downloading"
+        updateProgress = 0f
+        viewModelScope.launch {
+            try {
+                val file = updater.download(release) { updateProgress = it }
+                updateFile = file
+                updateState = "ready"
+                launchInstaller(file)
+            } catch (e: Exception) {
+                updateState = "available"
+                updateError = e.message ?: e.javaClass.simpleName
+            }
+        }
+    }
+
+    private fun launchInstaller(file: File) {
+        try {
+            updater.install(file)
+        } catch (e: Exception) {
+            updateError = e.message ?: e.javaClass.simpleName
+        }
+    }
+
+    fun closeUpdatePrompt() {
+        updatePrompt = false
+        val release = update ?: return
+        // "Cancel" means: do not ask again for this build.
+        if (updateState == "available") store.saveSkippedBuild(release.build)
     }
 
     // ---- local data ----

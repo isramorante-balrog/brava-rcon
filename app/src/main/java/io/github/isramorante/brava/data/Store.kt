@@ -43,6 +43,9 @@ class Store(context: Context) {
     fun loadLock(): Boolean = prefs.getBoolean("lock", false)
     fun saveLock(on: Boolean) = prefs.edit().putBoolean("lock", on).apply()
 
+    fun loadSkippedBuild(): Int = prefs.getInt("skipped_build", 0)
+    fun saveSkippedBuild(build: Int) = prefs.edit().putInt("skipped_build", build).apply()
+
     private fun <T> read(key: String, parse: (String) -> T): T? {
         val raw = prefs.getString(key, null) ?: return null
         return try {

@@ -81,6 +81,8 @@ data class CompanionCfg(
     @SerialName("NotifyStart") val notifyStart: Boolean = true,
     @SerialName("UtcOffsetHours") val utcOffsetHours: Double = 0.0,
     @SerialName("Schedules") val schedules: List<ScheduleItem> = emptyList(),
+    @SerialName("FreshHostname") val freshHostname: String = "",
+    @SerialName("FreshHours") val freshHours: Double = 48.0,
 )
 
 data class MapDot(val steamId: String, val name: String, val x: Float, val z: Float)

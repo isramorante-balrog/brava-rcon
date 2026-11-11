@@ -213,6 +213,14 @@ fun AlertsPage(vm: AppViewModel, onBack: () -> Unit) {
             Toggle(tr("Wipe finished (new map)", "Wipe terminado (mapa nuevo)"), "", cfg.notifyWipe) { vm.companionCmd("brava.wipe ${!cfg.notifyWipe}") }
             Toggle(tr("Server started", "Servidor encendido"), "", cfg.notifyStart) { vm.companionCmd("brava.start ${!cfg.notifyStart}") }
 
+            Label(tr("Fresh-wipe server name", "Nombre del servidor recién wipeado"), Modifier.padding(top = 8.dp))
+            Toggle(
+                if (cfg.freshHostname.isBlank()) tr("Off", "Apagado") else cfg.freshHostname,
+                if (cfg.freshHostname.isBlank()) tr("Shows a different server name for some hours after each wipe.", "Muestra otro nombre del servidor unas horas después de cada wipe.")
+                else tr("Shown for ${cfg.freshHours} h after each wipe, then the normal name returns.", "Se muestra ${cfg.freshHours} h después de cada wipe; luego vuelve el nombre normal."),
+                null,
+            ) { dialog = "wipetag" }
+
             Label(tr("Scheduled commands", "Comandos programados"), Modifier.padding(top = 8.dp))
             Text(
                 tr("Server clock offset from UTC: ${cfg.utcOffsetHours} h", "Diferencia del reloj con UTC: ${cfg.utcOffsetHours} h"),
@@ -269,6 +277,17 @@ fun AlertsPage(vm: AppViewModel, onBack: () -> Unit) {
             labels = listOf(tr("Every how many minutes", "Cada cuántos minutos"), tr("Command", "Comando")),
             confirm = tr("Add", "Agregar"),
             onConfirm = { vm.companionCmd("brava.schedule.add every:${it[0].trim()} \"${it[1].replace("\"", "'")}\"") },
+            onDismiss = close,
+        )
+        "wipetag" -> PromptDialog(
+            title = tr("Fresh-wipe name", "Nombre recién wipeado"),
+            labels = listOf(
+                tr("Server name ({date} = wipe day). Empty = off", "Nombre ({date} = día del wipe). Vacío = apagado"),
+                tr("Hours to show it", "Horas que se muestra"),
+            ),
+            defaults = listOf(cfg?.freshHostname ?: "", cfg?.freshHours?.toString() ?: "48"),
+            confirm = tr("Save", "Guardar"),
+            onConfirm = { vm.companionCmd("brava.wipetag \"${it[0].replace("\"", "'")}\" ${it[1].trim()}") },
             onDismiss = close,
         )
         "offset" -> PromptDialog(

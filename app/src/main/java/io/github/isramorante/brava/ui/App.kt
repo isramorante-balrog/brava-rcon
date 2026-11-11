@@ -53,8 +53,10 @@ fun BravaApp(vm: AppViewModel, unlock: () -> Unit, canLock: () -> Boolean) {
                 BravaButton(tr("Unlock", "Desbloquear"), unlock, kind = Kind.Go)
             }
         } else if (vm.active == null) {
+            UpdatePrompt(vm)
             ServersScreen(vm, canLock)
         } else {
+            UpdatePrompt(vm)
             var tab by rememberSaveable { mutableIntStateOf(0) }
             BackHandler { if (tab != 0) tab = 0 else vm.leave() }
             Column(Modifier.fillMaxSize()) {

@@ -20,6 +20,8 @@ Not affiliated with or endorsed by Facepunch Studios. "Rust" is a trademark of F
 - Player map on the game grid
 - App lock with fingerprint, face or the phone PIN
 - Alerts and scheduled commands through the companion plugin (see below)
+- Built-in updater: checks this repository for a newer build and installs it over the app, keeping servers and settings
+- Fresh-wipe server name: the companion plugin shows a different name for some hours after each wipe
 - English and Spanish, picked from the phone language
 
 ## Planned

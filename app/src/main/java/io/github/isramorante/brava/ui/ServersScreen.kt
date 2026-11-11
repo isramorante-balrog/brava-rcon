@@ -94,6 +94,8 @@ fun ServersScreen(vm: AppViewModel, canLock: () -> Boolean) {
                 color = C.mute,
                 fontSize = 14.sp,
             )
+            Label(tr("App version", "Versión de la app"), Modifier.padding(top = 8.dp))
+            UpdateRow(vm)
         }
     }
 
