@@ -10,7 +10,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.0.0")]
+    [Info("BravaCompanion", "Brava RCON", "1.0.1")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -25,7 +25,8 @@ namespace Oxide.Plugins
         {
             public string NtfyServer = "https://ntfy.sh";
             public string Topic = "";
-            public List<string> Keywords = new List<string> { "admin", "hacker", "cheater", "hack" };
+            // Defaults are added in LoadDefaultConfig: a list filled here would be appended to on every load.
+            public List<string> Keywords = new List<string>();
             public bool NotifyJoins = false;
             public bool NotifyWipe = true;
             public bool NotifyStart = true;
@@ -41,6 +42,7 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             settings = new Settings();
+            settings.Keywords = new List<string> { "admin", "hacker", "cheater", "hack", "tramposo" };
         }
 
         protected override void LoadConfig()
