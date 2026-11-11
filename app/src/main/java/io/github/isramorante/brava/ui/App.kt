@@ -31,7 +31,7 @@ import io.github.isramorante.brava.AppViewModel
 import io.github.isramorante.brava.tr
 
 @Composable
-fun BravaApp(vm: AppViewModel) {
+fun BravaApp(vm: AppViewModel, unlock: () -> Unit, canLock: () -> Boolean) {
     val context = LocalContext.current
     val toast = vm.toast
     LaunchedEffect(toast) {
@@ -41,8 +41,19 @@ fun BravaApp(vm: AppViewModel) {
         }
     }
     Box(Modifier.fillMaxSize().background(C.bg).safeDrawingPadding().imePadding()) {
-        if (vm.active == null) {
-            ServersScreen(vm)
+        if (vm.locked) {
+            LaunchedEffect(Unit) { unlock() }
+            Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            ) {
+                Title("Brava RCON")
+                Text(tr("Locked", "Bloqueado"), color = C.mute)
+                BravaButton(tr("Unlock", "Desbloquear"), unlock, kind = Kind.Go)
+            }
+        } else if (vm.active == null) {
+            ServersScreen(vm, canLock)
         } else {
             var tab by rememberSaveable { mutableIntStateOf(0) }
             BackHandler { if (tab != 0) tab = 0 else vm.leave() }

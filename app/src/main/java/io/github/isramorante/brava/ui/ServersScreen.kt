@@ -28,7 +28,7 @@ import io.github.isramorante.brava.tr
 import java.util.UUID
 
 @Composable
-fun ServersScreen(vm: AppViewModel) {
+fun ServersScreen(vm: AppViewModel, canLock: () -> Boolean) {
     var editing by remember { mutableStateOf<ServerProfile?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<ServerProfile?>(null) }
@@ -74,6 +74,26 @@ fun ServersScreen(vm: AppViewModel) {
                 }
             }
             BravaButton(tr("Add server", "Agregar servidor"), { creating = true }, Modifier.fillMaxWidth())
+            Label(tr("Security", "Seguridad"), Modifier.padding(top = 8.dp))
+            BravaButton(
+                if (vm.lockEnabled) tr("App lock: on", "Bloqueo de la app: activado") else tr("App lock: off", "Bloqueo de la app: desactivado"),
+                {
+                    if (vm.lockEnabled) {
+                        vm.changeLock(false)
+                    } else if (canLock()) {
+                        vm.changeLock(true)
+                    } else {
+                        vm.toast = tr("Set a fingerprint or screen lock on the phone first", "Primero configura huella o bloqueo de pantalla en el teléfono")
+                    }
+                },
+                Modifier.fillMaxWidth(),
+                if (vm.lockEnabled) Kind.Go else Kind.Neutral,
+            )
+            Text(
+                tr("Asks for your fingerprint, face or phone PIN every time the app opens.", "Pide tu huella, rostro o el PIN del teléfono cada vez que se abre la app."),
+                color = C.mute,
+                fontSize = 14.sp,
+            )
         }
     }
 

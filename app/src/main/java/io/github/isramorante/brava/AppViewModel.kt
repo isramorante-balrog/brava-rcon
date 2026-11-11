@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import io.github.isramorante.brava.data.Ban
 import io.github.isramorante.brava.data.ChatMsg
 import io.github.isramorante.brava.data.ChatPayload
+import io.github.isramorante.brava.data.CompanionCfg
+import io.github.isramorante.brava.data.MapDot
 import io.github.isramorante.brava.data.J
 import io.github.isramorante.brava.data.LogLine
 import io.github.isramorante.brava.data.Player
@@ -59,6 +61,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var panelError by mutableStateOf<String?>(null)
         private set
     var toast by mutableStateOf<String?>(null)
+    var lockEnabled by mutableStateOf(store.loadLock())
+        private set
+    var locked by mutableStateOf(store.loadLock())
+        private set
+    var permsText by mutableStateOf("")
+        private set
+    var mapDots by mutableStateOf<List<MapDot>>(emptyList())
+        private set
+    var worldSize by mutableStateOf(0)
+        private set
+    var mapError by mutableStateOf<String?>(null)
+        private set
+    var companion by mutableStateOf<CompanionCfg?>(null)
+        private set
+    var companionState by mutableStateOf("loading")
+        private set
 
     val console = mutableStateListOf<LogLine>()
     val chat = mutableStateListOf<ChatMsg>()
@@ -107,6 +125,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         bans = null
         bansRaw = ""
         pluginsText = ""
+        permsText = ""
+        mapDots = emptyList()
+        worldSize = 0
+        companion = null
+        companionState = "loading"
         panel = null
         panelError = null
         console.clear()
@@ -251,6 +274,88 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 tr("Could not load plugins: ", "No se pudieron cargar los plugins: ") + (e.message ?: "")
             }
+        }
+    }
+
+    // ---- app lock ----
+
+    fun changeLock(on: Boolean) {
+        lockEnabled = on
+        store.saveLock(on)
+    }
+
+    fun lockIfEnabled() {
+        if (lockEnabled) locked = true
+    }
+
+    fun unlocked() {
+        locked = false
+    }
+
+    // ---- permissions (Carbon) ----
+
+    fun perms(command: String) {
+        log("> $command", "Own")
+        viewModelScope.launch {
+            permsText = try {
+                rcon.request(command).ifBlank { tr("Done (no reply).", "Hecho (sin respuesta).") }
+            } catch (e: Exception) {
+                tr("No reply: ", "Sin respuesta: ") + (e.message ?: "")
+            }
+        }
+    }
+
+    // ---- player map ----
+
+    private val posRegex = Regex("""(7656\d{13})[^(]*\(\s*(-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+)\s*\)""")
+
+    suspend fun loadMap() {
+        try {
+            if (worldSize == 0) {
+                worldSize = Regex("""(\d{3,5})""").find(rcon.request("worldsize"))?.value?.toIntOrNull() ?: 0
+            }
+            val raw = rcon.request("playerlistpos")
+            mapDots = posRegex.findAll(raw).mapNotNull { m ->
+                val id = m.groupValues[1]
+                val x = m.groupValues[2].toFloatOrNull()
+                val z = m.groupValues[4].toFloatOrNull()
+                if (x == null || z == null) null else MapDot(id, players.firstOrNull { it.steamId == id }?.name ?: id.takeLast(5), x, z)
+            }.toList()
+            mapError = null
+        } catch (e: Exception) {
+            mapError = e.message ?: e.javaClass.simpleName
+        }
+    }
+
+    // ---- companion plugin (alerts and schedules) ----
+
+    suspend fun loadCompanion() {
+        try {
+            val raw = rcon.request("brava.status")
+            val start = raw.indexOf('{')
+            if (start < 0) {
+                companion = null
+                companionState = "missing"
+            } else {
+                companion = J.decodeFromString<CompanionCfg>(raw.substring(start))
+                companionState = "ok"
+            }
+        } catch (e: Exception) {
+            companion = null
+            companionState = "missing"
+        }
+    }
+
+    fun companionCmd(command: String) {
+        log("> $command", "Own")
+        viewModelScope.launch {
+            try {
+                val reply = rcon.request(command)
+                if (reply.isNotBlank()) toast = reply.lines().first().take(80)
+            } catch (e: Exception) {
+                toast = tr("No reply", "Sin respuesta")
+            }
+            loadCompanion()
         }
     }
 

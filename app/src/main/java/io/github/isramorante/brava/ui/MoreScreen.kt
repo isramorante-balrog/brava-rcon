@@ -38,6 +38,9 @@ fun MoreScreen(vm: AppViewModel) {
         "bans" -> BansPage(vm) { page = "" }
         "plugins" -> PluginsPage(vm) { page = "" }
         "panel" -> PanelPage(vm) { page = "" }
+        "perms" -> PermsPage(vm) { page = "" }
+        "map" -> MapPage(vm) { page = "" }
+        "alerts" -> AlertsPage(vm) { page = "" }
         "edit" -> ServerForm(vm.active, onSave = { vm.saveServer(it); page = "" }, onCancel = { page = "" })
         else -> Column(Modifier.fillMaxSize()) {
             Header(tr("More", "Más"))
@@ -47,6 +50,10 @@ fun MoreScreen(vm: AppViewModel) {
             ) {
                 Label(tr("Moderation", "Moderación"))
                 BravaButton(tr("Ban list", "Lista de bans"), { page = "bans" }, Modifier.fillMaxWidth())
+                BravaButton(tr("Permissions", "Permisos"), { page = "perms" }, Modifier.fillMaxWidth())
+                BravaButton(tr("Player map", "Mapa de jugadores"), { page = "map" }, Modifier.fillMaxWidth())
+                Label(tr("Automation", "Automatización"), Modifier.padding(top = 8.dp))
+                BravaButton(tr("Alerts and schedules", "Alertas y programados"), { page = "alerts" }, Modifier.fillMaxWidth())
                 Label(tr("Server", "Servidor"), Modifier.padding(top = 8.dp))
                 BravaButton("Plugins", { page = "plugins" }, Modifier.fillMaxWidth())
                 BravaButton(tr("Hosting panel", "Panel del hosting"), { page = "panel" }, Modifier.fillMaxWidth())
@@ -68,7 +75,7 @@ fun MoreScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun SubHeader(title: String, onBack: () -> Unit) {
+fun SubHeader(title: String, onBack: () -> Unit) {
     Header(title) { BravaButton(tr("Back", "Volver"), onBack, height = 44.dp) }
 }
 

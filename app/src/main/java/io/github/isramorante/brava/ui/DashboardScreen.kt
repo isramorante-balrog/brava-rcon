@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import io.github.isramorante.brava.AppViewModel
 import io.github.isramorante.brava.data.QuickCmd
 import io.github.isramorante.brava.fmtDuration
+import io.github.isramorante.brava.fmtGb
 import io.github.isramorante.brava.rcon.ConnState
 import io.github.isramorante.brava.tr
 
@@ -92,16 +93,26 @@ fun DashboardScreen(vm: AppViewModel) {
                 Stat("FPS", if (info == null) "–" else info.framerate.toInt().toString(), tr("Server frame rate", "FPS del servidor"), Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Stat(
-                    tr("Memory", "Memoria"),
-                    if (info == null) "–" else "${info.memory} MB",
-                    if (info == null) "" else tr("${info.entityCount} entities", "${info.entityCount} entidades"),
-                    Modifier.weight(1f),
-                )
+                val host = vm.panel
+                if (host != null && host.memoryLimitBytes > 0) {
+                    Stat(
+                        "RAM",
+                        "${fmtGb(host.memoryBytes)} / ${fmtGb(host.memoryLimitBytes)} GB",
+                        tr("Whole server, from the hosting panel", "Todo el servidor, según el panel"),
+                        Modifier.weight(1f),
+                    )
+                } else {
+                    Stat(
+                        tr("Game memory", "Memoria del juego"),
+                        if (info == null) "–" else "${info.memory} MB",
+                        tr("Rust only, not the whole server", "Solo Rust, no todo el servidor"),
+                        Modifier.weight(1f),
+                    )
+                }
                 Stat(
                     tr("Uptime", "Encendido"),
                     if (info == null) "–" else fmtDuration(info.uptime),
-                    info?.map ?: "",
+                    if (info == null) "" else tr("${info.entityCount} entities", "${info.entityCount} entidades"),
                     Modifier.weight(1f),
                 )
             }

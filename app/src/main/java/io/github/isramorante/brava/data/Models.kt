@@ -63,6 +63,28 @@ data class ChatPayload(
     @SerialName("Time") val time: Long = 0,
 )
 
+@Serializable
+data class ScheduleItem(
+    @SerialName("Time") val time: String = "",
+    @SerialName("EveryMinutes") val everyMinutes: Int = 0,
+    @SerialName("Command") val command: String = "",
+)
+
+/** Settings of the BravaCompanion server plugin, as printed by the brava.status command. */
+@Serializable
+data class CompanionCfg(
+    @SerialName("NtfyServer") val ntfyServer: String = "",
+    @SerialName("Topic") val topic: String = "",
+    @SerialName("Keywords") val keywords: List<String> = emptyList(),
+    @SerialName("NotifyJoins") val notifyJoins: Boolean = false,
+    @SerialName("NotifyWipe") val notifyWipe: Boolean = true,
+    @SerialName("NotifyStart") val notifyStart: Boolean = true,
+    @SerialName("UtcOffsetHours") val utcOffsetHours: Double = 0.0,
+    @SerialName("Schedules") val schedules: List<ScheduleItem> = emptyList(),
+)
+
+data class MapDot(val steamId: String, val name: String, val x: Float, val z: Float)
+
 data class Ban(val steamId: String, val name: String, val reason: String)
 
 data class LogLine(val time: Long, val text: String, val type: String)

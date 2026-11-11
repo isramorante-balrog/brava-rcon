@@ -40,6 +40,9 @@ class Store(context: Context) {
     fun loadHistory(): List<String> = read("history") { J.decodeFromString<List<String>>(it) } ?: emptyList()
     fun saveHistory(list: List<String>) = write("history", J.encodeToString(list))
 
+    fun loadLock(): Boolean = prefs.getBoolean("lock", false)
+    fun saveLock(on: Boolean) = prefs.edit().putBoolean("lock", on).apply()
+
     private fun <T> read(key: String, parse: (String) -> T): T? {
         val raw = prefs.getString(key, null) ?: return null
         return try {
