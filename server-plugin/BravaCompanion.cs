@@ -18,7 +18,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.2.3")]
+    [Info("BravaCompanion", "Brava RCON", "1.2.4")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -909,7 +909,7 @@ namespace Oxide.Plugins
         // Kits keeps its data in memory and writes it when it unloads, so edit the file while it is unloaded.
         private string EditKits(Func<JObject, string> change)
         {
-            RunCommand("c.unload Kits");
+            Interface.Oxide.UnloadPlugin("Kits");
             string reply;
             try
             {
@@ -927,7 +927,7 @@ namespace Oxide.Plugins
             {
                 reply = "Error: " + e.GetBaseException().Message;
             }
-            RunCommand("c.load Kits");
+            Interface.Oxide.LoadPlugin("Kits");
             return reply;
         }
 
