@@ -18,7 +18,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.2.0")]
+    [Info("BravaCompanion", "Brava RCON", "1.2.1")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -124,6 +124,9 @@ namespace Oxide.Plugins
         {
             baseHostname = ConVar.Server.hostname;
             ApplyHostname();
+            // Drawing the terrain freezes the server for several seconds, so do it once at start-up
+            // (before players join) and keep it on disk for the rest of the wipe.
+            timer.Once(1f, () => PrepareMap(false));
             timer.Every(20f, Tick);
             if (wiped && settings.NotifyWipe) Push(T("Wipe finished", "Wipe terminado"), ConVar.Server.hostname + T(" is up with a new map.", " ya está en línea con mapa nuevo."));
             else if (initial && settings.NotifyStart) Push(T("Server started", "Servidor encendido"), ConVar.Server.hostname + T(" is online.", " está en línea."));
@@ -580,19 +583,69 @@ namespace Oxide.Plugins
 
         // ---- terrain image for the app's player map ----
 
+        private class MapCache
+        {
+            public uint Seed;
+            public int Size;
+            public int Width;
+            public int Height;
+            public int Margin;
+            public string Data;
+        }
+
+        private string MapCacheFile()
+        {
+            return Path.Combine(Interface.Oxide.DataDirectory, "BravaCompanion_map.json");
+        }
+
+        private void PrepareMap(bool force)
+        {
+            try
+            {
+                string path = MapCacheFile();
+                if (File.Exists(path))
+                {
+                    var cache = JsonConvert.DeserializeObject<MapCache>(File.ReadAllText(path));
+                    if (cache != null && cache.Seed == World.Seed && cache.Size == World.Size && !string.IsNullOrEmpty(cache.Data))
+                    {
+                        mapImage = cache.Data;
+                        mapWidth = cache.Width;
+                        mapHeight = cache.Height;
+                        mapMargin = cache.Margin;
+                        return;
+                    }
+                }
+                if (!force && BasePlayer.activePlayerList.Count > 0) return;
+                RenderMap();
+                File.WriteAllText(path, JsonConvert.SerializeObject(new MapCache
+                {
+                    Seed = World.Seed, Size = (int)World.Size, Width = mapWidth, Height = mapHeight, Margin = mapMargin, Data = mapImage
+                }));
+                Puts("Terrain image ready for the app (" + mapWidth + " px).");
+            }
+            catch (Exception e)
+            {
+                PrintWarning("Could not prepare the terrain image: " + e.GetBaseException().Message);
+            }
+        }
+
         [ConsoleCommand("brava.mapimage")]
         private void CmdMapImage(ConsoleSystem.Arg arg)
         {
             if (!Allowed(arg)) return;
             if (mapImage == null)
             {
-                try
+                // Never draw it while people play: it freezes the server long enough to time them out.
+                bool force = arg.GetString(1, "") == "force";
+                if (BasePlayer.activePlayerList.Count > 0 && !force)
                 {
-                    RenderMap();
+                    arg.ReplyWith("{\"Error\":\"busy\"}");
+                    return;
                 }
-                catch (Exception e)
+                PrepareMap(force);
+                if (mapImage == null)
                 {
-                    arg.ReplyWith("{\"Error\":" + JsonConvert.SerializeObject(e.GetBaseException().Message) + "}");
+                    arg.ReplyWith("{\"Error\":\"Could not draw the terrain image\"}");
                     return;
                 }
             }
@@ -633,7 +686,7 @@ namespace Oxide.Plugins
                     else if (n.Contains("height")) heightAt = i;
                     args[i] = null;
                 }
-                else if (n == "scale") args[i] = 0.35f;
+                else if (n == "scale") args[i] = 0.3f;
                 else if (n == "lossy") args[i] = true;
                 else if (n.Contains("transparent")) args[i] = false;
                 else if (n.Contains("margin")) args[i] = margin;

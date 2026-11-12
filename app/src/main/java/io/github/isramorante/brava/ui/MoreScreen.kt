@@ -40,7 +40,6 @@ fun MoreScreen(vm: AppViewModel) {
         "plugins" -> PluginsPage(vm, back)
         "panel" -> PanelPage(vm, back)
         "perms" -> PermsPage(vm, back)
-        "map" -> MapPage(vm, back)
         "alerts" -> AlertsPage(vm, back)
         "reports" -> ReportsPage(vm, back)
         "wipes" -> WipesPage(vm, back)
@@ -62,7 +61,6 @@ fun MoreScreen(vm: AppViewModel) {
                     if (unseen > 0) Kind.DangerSolid else Kind.Neutral,
                 )
                 BravaButton(tr("Ban list", "Lista de bans"), { go("bans") }, Modifier.fillMaxWidth())
-                BravaButton(tr("Player map", "Mapa de jugadores"), { go("map") }, Modifier.fillMaxWidth())
                 BravaButton(tr("Permissions", "Permisos"), { go("perms") }, Modifier.fillMaxWidth())
                 Label(tr("Server", "Servidor"), Modifier.padding(top = 8.dp))
                 BravaButton(tr("Wipe calendar", "Calendario de wipes"), { go("wipes") }, Modifier.fillMaxWidth())

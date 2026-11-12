@@ -113,7 +113,7 @@ private fun gridRef(dot: MapDot, world: Int): String {
 }
 
 @Composable
-fun MapPage(vm: AppViewModel, onBack: () -> Unit) {
+fun MapPage(vm: AppViewModel, onBack: (() -> Unit)?) {
     LaunchedEffect(Unit) {
         vm.loadMapImage()
         while (true) {
@@ -123,14 +123,17 @@ fun MapPage(vm: AppViewModel, onBack: () -> Unit) {
     }
     val world = vm.worldSize
     val image = vm.mapImage
-    // The terrain image includes an ocean border around the playable square.
-    val margin = if (image != null) vm.mapMargin else 0
-    val total = (world + 2 * margin).toFloat()
+    // The terrain image has an ocean border around the playable square, measured in image pixels.
+    val mf = if (image != null && image.width > 0) (vm.mapMargin.toFloat() / image.width).coerceIn(0f, 0.45f) else 0f
+    val inner = 1f - 2f * mf
+    fun fracX(x: Float) = mf + (x + world / 2f) / world * inner
+    fun fracY(z: Float) = mf + (world / 2f - z) / world * inner
     var zoom by remember { mutableStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
     Column(Modifier.fillMaxSize()) {
-        SubHeader(tr("Player map", "Mapa de jugadores"), onBack)
+        if (onBack != null) SubHeader(tr("Player map", "Mapa de jugadores"), onBack)
+        else Header(tr("Map", "Mapa")) { ConnBadge(vm) }
         BoxWithConstraints(
             Modifier.fillMaxWidth().aspectRatio(1f).background(C.black).clipToBounds()
                 .pointerInput(Unit) {
@@ -153,9 +156,9 @@ fun MapPage(vm: AppViewModel, onBack: () -> Unit) {
                 }
                 Canvas(Modifier.fillMaxSize()) {
                     if (world > 0) {
-                        val start = size.width * margin / total
-                        val end = size.width * (margin + world) / total
-                        val step = size.width * CELL / total
+                        val start = size.width * mf
+                        val end = size.width * (1f - mf)
+                        val step = size.width * inner * CELL / world
                         val gridColor = if (image != null) C.black.copy(alpha = 0.35f) else C.line
                         var p = start
                         while (p <= end + 0.5f) {
@@ -169,8 +172,8 @@ fun MapPage(vm: AppViewModel, onBack: () -> Unit) {
             if (world > 0) {
                 // Dots stay the same size at any zoom, so they are drawn outside the zoomed layer.
                 vm.mapDots.forEach { dot ->
-                    val fx = ((dot.x + world / 2f + margin) / total).coerceIn(0f, 1f)
-                    val fy = ((world / 2f + margin - dot.z) / total).coerceIn(0f, 1f)
+                    val fx = fracX(dot.x).coerceIn(0f, 1f)
+                    val fy = fracY(dot.z).coerceIn(0f, 1f)
                     val x = (fx * sidePx - sidePx / 2f) * zoom + sidePx / 2f + pan.x
                     val y = (fy * sidePx - sidePx / 2f) * zoom + sidePx / 2f + pan.y
                     if (x in 0f..sidePx && y in 0f..sidePx) {
@@ -199,6 +202,10 @@ fun MapPage(vm: AppViewModel, onBack: () -> Unit) {
                 Text(
                     when (vm.mapImageState) {
                         "loading" -> tr("Drawing the terrain on the server… the first time takes about 20 seconds.", "Dibujando el terreno en el servidor… la primera vez tarda unos 20 segundos.")
+                        "busy" -> tr(
+                            "The terrain image is drawn when the server starts, so players never freeze. It will show after the next restart. Showing the grid for now.",
+                            "La imagen del terreno se dibuja al arrancar el servidor, para no congelar a los jugadores. Aparecerá después del próximo reinicio; por ahora solo se ve la cuadrícula.",
+                        )
                         "error" -> tr("No terrain image (needs the BravaCompanion plugin). Showing the grid only.", "Sin imagen del terreno (necesita el plugin BravaCompanion). Solo se ve la cuadrícula.")
                         else -> tr("Pinch to zoom. Positions update every 10 seconds.", "Pellizca para hacer zoom. Las posiciones se actualizan cada 10 segundos.")
                     },

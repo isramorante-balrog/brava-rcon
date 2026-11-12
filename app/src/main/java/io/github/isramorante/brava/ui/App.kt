@@ -65,8 +65,9 @@ fun BravaApp(vm: AppViewModel, unlock: () -> Unit, canLock: () -> Boolean) {
                     when (tab) {
                         0 -> DashboardScreen(vm)
                         1 -> PlayersScreen(vm)
-                        2 -> ConsoleScreen(vm)
-                        3 -> ChatScreen(vm)
+                        2 -> MapPage(vm, null)
+                        3 -> ConsoleScreen(vm)
+                        4 -> ChatScreen(vm)
                         else -> MoreScreen(vm)
                     }
                 }
@@ -78,7 +79,9 @@ fun BravaApp(vm: AppViewModel, unlock: () -> Unit, canLock: () -> Boolean) {
 
 @Composable
 private fun TabBar(selected: Int, moreDot: Boolean, onSelect: (Int) -> Unit) {
-    val labels = listOf(tr("HOME", "INICIO"), tr("PLAYERS", "JUGADORES"), tr("CONSOLE", "CONSOLA"), "CHAT", tr("MORE", "MÁS"))
+    val labels = listOf(tr("HOME", "INICIO"), tr("PLAYERS", "JUGADORES"), tr("MAP", "MAPA"), tr("CONSOLE", "CONSOLA"), "CHAT", tr("MORE", "MÁS"))
+    // TabIcon draws by its own index; the map icon is 6 and "More" is 5.
+    val icons = listOf(0, 1, 6, 2, 3, 5)
     Column(Modifier.fillMaxWidth().background(C.black)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
         Row(Modifier.fillMaxWidth()) {
@@ -96,11 +99,11 @@ private fun TabBar(selected: Int, moreDot: Boolean, onSelect: (Int) -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
                     ) {
                         Box {
-                            TabIcon(i, color)
+                            TabIcon(icons[i], color)
                             // A small mark on "More" when there are F7 reports nobody has opened.
-                            if (i == 4 && moreDot) Box(Modifier.align(Alignment.TopEnd).size(8.dp).background(C.rust))
+                            if (i == 5 && moreDot) Box(Modifier.align(Alignment.TopEnd).size(8.dp).background(C.rust))
                         }
-                        Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp, maxLines = 1)
+                        Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp, maxLines = 1, softWrap = false)
                     }
                 }
             }

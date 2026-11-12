@@ -260,6 +260,23 @@ fun TabIcon(index: Int, color: Color) {
                 drawRect(color, Offset(w * 0.16f, w * 0.2f), Size(w * 0.68f, w * 0.46f), style = s)
                 drawLine(color, Offset(w * 0.3f, w * 0.66f), Offset(w * 0.2f, w * 0.84f), s.width)
             }
+            6 -> {
+                // Folded map
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(w * 0.14f, w * 0.26f)
+                    lineTo(w * 0.38f, w * 0.16f)
+                    lineTo(w * 0.62f, w * 0.26f)
+                    lineTo(w * 0.86f, w * 0.16f)
+                    lineTo(w * 0.86f, w * 0.74f)
+                    lineTo(w * 0.62f, w * 0.84f)
+                    lineTo(w * 0.38f, w * 0.74f)
+                    lineTo(w * 0.14f, w * 0.84f)
+                    close()
+                }
+                drawPath(path, color, style = s)
+                drawLine(color, Offset(w * 0.38f, w * 0.16f), Offset(w * 0.38f, w * 0.74f), s.width)
+                drawLine(color, Offset(w * 0.62f, w * 0.26f), Offset(w * 0.62f, w * 0.84f), s.width)
+            }
             else -> for (y in listOf(0.28f, 0.5f, 0.72f)) drawLine(color, Offset(w * 0.16f, w * y), Offset(w * 0.84f, w * y), s.width)
         }
     }

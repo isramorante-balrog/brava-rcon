@@ -131,7 +131,7 @@ fun DashboardScreen(vm: AppViewModel) {
             if (unseen > 0) {
                 BravaButton(
                     tr("$unseen new F7 reports", "$unseen reportes F7 nuevos"),
-                    { vm.tab = 4; vm.morePage = "reports" },
+                    { vm.tab = 5; vm.morePage = "reports" },
                     Modifier.fillMaxWidth(),
                     Kind.DangerSolid,
                 )
@@ -139,7 +139,7 @@ fun DashboardScreen(vm: AppViewModel) {
             if (next != null) {
                 Row(
                     Modifier.fillMaxWidth().background(C.panel).border(1.dp, C.line)
-                        .clickable { vm.tab = 4; vm.morePage = "wipes" }.padding(16.dp),
+                        .clickable { vm.tab = 5; vm.morePage = "wipes" }.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -180,7 +180,7 @@ fun DashboardScreen(vm: AppViewModel) {
             val reply = vm.lastReply
             if (reply != null) {
                 Column(
-                    Modifier.fillMaxWidth().background(C.black).border(1.dp, C.line).clickable { vm.tab = 2 }.padding(14.dp),
+                    Modifier.fillMaxWidth().background(C.black).border(1.dp, C.line).clickable { vm.tab = 3 }.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

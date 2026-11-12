@@ -635,7 +635,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     margin = cached.name.removePrefix("map_${seed}_${size}_").removeSuffix(".jpg").toIntOrNull() ?: 0
                 } else {
                     // The first request renders the map on the server, which can take a while.
-                    val first = J.decodeFromString<MapChunk>(companionJson("brava.mapimage 0", 90_000) ?: throw IllegalStateException("No reply"))
+                    val first = J.decodeFromString<MapChunk>(companionJson("brava.mapimage 0", 30_000) ?: throw IllegalStateException("No reply"))
+                    if (first.error == "busy") {
+                        mapImageState = "busy"
+                        return@launch
+                    }
                     if (first.error.isNotBlank()) throw IllegalStateException(first.error)
                     val text = StringBuilder(first.data)
                     for (i in 1 until first.chunks) {
