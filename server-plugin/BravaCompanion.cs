@@ -18,7 +18,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.2.6")]
+    [Info("BravaCompanion", "Brava RCON", "1.3.0")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -530,6 +530,41 @@ namespace Oxide.Plugins
             ResetScheduleState();
             SaveConfig();
             arg.ReplyWith("Removed.");
+        }
+
+        // ---- /raid: where the Raidable Bases events are ----
+
+        private static readonly string[] Compass = { "norte", "noreste", "este", "sureste", "sur", "suroeste", "oeste", "noroeste" };
+
+        [ChatCommand("raid")]
+        private void CmdRaid(BasePlayer player, string command, string[] args)
+        {
+            if (player == null) return;
+            // Raidable Bases puts a vending-style marker on every open base; read those.
+            var bases = BaseNetworkable.serverEntities.OfType<VendingMachineMapMarker>()
+                .Where(m => m != null && !m.IsDestroyed && m.markerShopName != null &&
+                            (m.markerShopName.IndexOf("raideable", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             m.markerShopName.IndexOf("raidable", StringComparison.OrdinalIgnoreCase) >= 0))
+                .Select(m => m.transform.position)
+                .OrderBy(p => Vector3Ex.Distance2D(p, player.transform.position))
+                .ToList();
+            if (bases.Count == 0)
+            {
+                SendReply(player, "<color=#ffb35c>[RAID]</color> Ahorita no hay bases raideables. Aparecen solas cuando hay gente conectada.");
+                return;
+            }
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<color=#ffb35c>[RAID]</color> Bases raideables (" + bases.Count + "), de la más cercana a la más lejana:");
+            foreach (var pos in bases)
+            {
+                Vector3 delta = pos - player.transform.position;
+                float angle = (Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg + 360f) % 360f;
+                string dir = Compass[(int)Mathf.Round(angle / 45f) % 8];
+                sb.Append("\n  <color=#FFFF00>" + MapHelper.PositionToString(pos) + "</color> · " +
+                          Mathf.RoundToInt(Vector3Ex.Distance2D(pos, player.transform.position)) + " m al " + dir);
+            }
+            sb.Append("\nTambién salen en el mapa (G) como \"Base raideable\".");
+            SendReply(player, sb.ToString());
         }
 
         [ConsoleCommand("brava.language")]
