@@ -143,6 +143,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val console = mutableStateListOf<LogLine>()
     val chat = mutableStateListOf<ChatMsg>()
+    private val richTag = Regex("""</?(color|b|i|size|u|s|sub|sup|mark)(=[^>]*)?>""", RegexOption.IGNORE_CASE)
 
     init {
         checkUpdate(manual = false)
@@ -238,17 +239,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 null
             }
             if (payload != null) {
-                chat.add(ChatMsg(System.currentTimeMillis(), payload.username, payload.message, payload.channel == 1))
+                chat.add(ChatMsg(System.currentTimeMillis(), payload.username, plain(payload.message), payload.channel == 1))
                 trim(chat, 500)
-                log("[CHAT] ${payload.username}: ${payload.message}", "Chat")
+                log("[CHAT] ${payload.username}: ${plain(payload.message)}", "Chat")
                 return
             }
         }
         log(m.text, m.type)
     }
 
+    /** Removes Rust rich-text tags such as <color=#ffb35c>…</color>, which the game renders but the app cannot. */
+    private fun plain(text: String): String = richTag.replace(text, "")
+
     private fun log(text: String, type: String) {
-        console.add(LogLine(System.currentTimeMillis(), text.trimEnd(), type))
+        console.add(LogLine(System.currentTimeMillis(), plain(text).trimEnd(), type))
         trim(console, 1000)
     }
 
@@ -269,7 +273,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         try {
             val items = J.decodeFromString<List<ChatPayload>>(rcon.request("chat.tail 50"))
             if (chat.isEmpty()) {
-                chat.addAll(items.map { ChatMsg(if (it.time > 0) it.time * 1000 else System.currentTimeMillis(), it.username, it.message, it.channel == 1) })
+                chat.addAll(items.map { ChatMsg(if (it.time > 0) it.time * 1000 else System.currentTimeMillis(), it.username, plain(it.message), it.channel == 1) })
             }
         } catch (e: Exception) {
             // Older servers may not answer chat.tail as JSON; live chat still works.
