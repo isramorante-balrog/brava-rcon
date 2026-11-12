@@ -211,7 +211,10 @@ namespace Oxide.Plugins
             // Copy from the middle of the base, standing on the foundations.
             Vector3 source = origin + new Vector3((l.W - 1) * 1.5f, 0f, (l.D - 1) * 1.5f);
             int count = spawned.Count;
-            object result = CopyPaste.Call("TryCopy", source, Vector3.zero, file, 0f, new[] { "method", "proximity", "radius", "3" }, null, (Action)(() =>
+            // CopyPaste needs a connected player to own the copy; use an online admin.
+            BasePlayer admin = BasePlayer.activePlayerList.FirstOrDefault(p => p.IsAdmin);
+            if (admin == null) { Clear(); arg.ReplyWith("An admin must be online"); return; }
+            object result = CopyPaste.Call("TryCopy", source, Vector3.zero, file, 0f, new[] { "method", "proximity", "radius", "3" }, admin.IPlayer, (Action)(() =>
             {
                 Puts("Copied " + file + " (" + count + " entities)");
                 Clear();
