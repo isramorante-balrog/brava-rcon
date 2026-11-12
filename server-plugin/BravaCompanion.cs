@@ -18,7 +18,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.2.5")]
+    [Info("BravaCompanion", "Brava RCON", "1.2.6")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -931,23 +931,44 @@ namespace Oxide.Plugins
             return reply;
         }
 
-        // Carbon ignores load requests from plugin code, but its file watcher reloads a plugin
-        // whose file changes, so touch Kits.cs. Oxide loads it through the API.
+        // Unloading puts a plugin on Carbon's ignore list, so do what Carbon's c.load does:
+        // ScriptProcessor.ClearIgnore(path) then Prepare(id, path). Oxide loads through its API.
         private void LoadKitsAgain()
         {
-            string file = Path.Combine(Interface.Oxide.PluginDirectory, "Kits.cs");
-            if (File.Exists(file))
+            string file = Path.GetFullPath(Path.Combine(Interface.Oxide.PluginDirectory, "Kits.cs"));
+            bool requested = false;
+            try
             {
-                File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
-                timer.Once(3f, () =>
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    if (plugins.Find("Kits") == null) Interface.Oxide.LoadPlugin("Kits");
-                });
+                    Type community = asm.GetType("Carbon.Community", false);
+                    if (community == null) continue;
+                    object runtime = community.GetProperty("Runtime", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+                        ?? community.GetField("Runtime", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                    if (runtime == null) break;
+                    object processor = runtime.GetType().GetProperty("ScriptProcessor")?.GetValue(runtime)
+                        ?? runtime.GetType().GetField("ScriptProcessor")?.GetValue(runtime);
+                    if (processor == null) break;
+                    MethodInfo clear = processor.GetType().GetMethods().FirstOrDefault(m => m.Name == "ClearIgnore" && m.GetParameters().Length == 1);
+                    clear?.Invoke(processor, new object[] { file });
+                    MethodInfo prepare = processor.GetType().GetMethods().FirstOrDefault(m => m.Name == "Prepare" && m.GetParameters().Length == 2 && m.GetParameters().All(p => p.ParameterType == typeof(string)));
+                    if (prepare != null)
+                    {
+                        prepare.Invoke(processor, new object[] { "Kits", file });
+                        requested = true;
+                    }
+                    break;
+                }
             }
-            else
+            catch (Exception e)
             {
-                Interface.Oxide.LoadPlugin("Kits");
+                PrintWarning("Carbon load of Kits failed: " + e.GetBaseException().Message);
             }
+            if (!requested) Interface.Oxide.LoadPlugin("Kits");
+            timer.Once(15f, () =>
+            {
+                if (plugins.Find("Kits") == null) PrintWarning("Kits did not load again. Run: c.load Kits");
+            });
         }
 
         private JObject Kit(JObject root, string name)
