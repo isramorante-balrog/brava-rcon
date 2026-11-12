@@ -18,7 +18,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.2.1")]
+    [Info("BravaCompanion", "Brava RCON", "1.2.2")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -721,7 +721,7 @@ namespace Oxide.Plugins
         private void WriteWipes(JObject root)
         {
             File.WriteAllText(WipeFile(), root.ToString(Formatting.Indented));
-            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.reloadmodule", "AutoWipe");
+            Server.Command("c.reloadmodule AutoWipe");
         }
 
         private static JArray WipeList(JObject root)
@@ -875,7 +875,7 @@ namespace Oxide.Plugins
         // Kits keeps its data in memory and writes it when it unloads, so edit the file while it is unloaded.
         private string EditKits(Func<JObject, string> change)
         {
-            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.unload", "Kits");
+            Server.Command("c.unload Kits");
             string reply;
             try
             {
@@ -893,7 +893,7 @@ namespace Oxide.Plugins
             {
                 reply = "Error: " + e.GetBaseException().Message;
             }
-            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.load", "Kits");
+            Server.Command("c.load Kits");
             return reply;
         }
 
