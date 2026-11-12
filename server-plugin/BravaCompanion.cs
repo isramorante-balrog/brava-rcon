@@ -18,7 +18,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.2.4")]
+    [Info("BravaCompanion", "Brava RCON", "1.2.5")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -927,8 +927,27 @@ namespace Oxide.Plugins
             {
                 reply = "Error: " + e.GetBaseException().Message;
             }
-            Interface.Oxide.LoadPlugin("Kits");
+            LoadKitsAgain();
             return reply;
+        }
+
+        // Carbon ignores load requests from plugin code, but its file watcher reloads a plugin
+        // whose file changes, so touch Kits.cs. Oxide loads it through the API.
+        private void LoadKitsAgain()
+        {
+            string file = Path.Combine(Interface.Oxide.PluginDirectory, "Kits.cs");
+            if (File.Exists(file))
+            {
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
+                timer.Once(3f, () =>
+                {
+                    if (plugins.Find("Kits") == null) Interface.Oxide.LoadPlugin("Kits");
+                });
+            }
+            else
+            {
+                Interface.Oxide.LoadPlugin("Kits");
+            }
         }
 
         private JObject Kit(JObject root, string name)
