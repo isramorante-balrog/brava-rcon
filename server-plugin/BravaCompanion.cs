@@ -18,7 +18,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.2.2")]
+    [Info("BravaCompanion", "Brava RCON", "1.2.3")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -179,6 +179,32 @@ namespace Oxide.Plugins
         private string RunCommand(string line)
         {
             return ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), line) ?? "";
+        }
+
+        // Carbon's c.reloadmodule does not answer commands sent from plugin code, so call
+        // Carbon.Base.BaseModule.FindModule(name).Reload() directly. Oxide has no modules.
+        private bool ReloadCarbonModule(string name)
+        {
+            try
+            {
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type baseModule = asm.GetType("Carbon.Base.BaseModule", false);
+                    if (baseModule == null) continue;
+                    MethodInfo find = baseModule.GetMethod("FindModule", BindingFlags.Public | BindingFlags.Static);
+                    object module = find?.Invoke(null, new object[] { name });
+                    if (module == null) return false;
+                    MethodInfo reload = module.GetType().GetMethod("Reload", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                    if (reload == null) return false;
+                    reload.Invoke(module, null);
+                    return true;
+                }
+            }
+            catch (Exception e)
+            {
+                PrintWarning("Could not reload module " + name + ": " + e.GetBaseException().Message);
+            }
+            return false;
         }
 
         private string T(string en, string es)
@@ -729,7 +755,7 @@ namespace Oxide.Plugins
         private void WriteWipes(JObject root)
         {
             File.WriteAllText(WipeFile(), root.ToString(Formatting.Indented));
-            RunCommand("c.reloadmodule AutoWipe");
+            ReloadCarbonModule("AutoWipe");
         }
 
         private static JArray WipeList(JObject root)
