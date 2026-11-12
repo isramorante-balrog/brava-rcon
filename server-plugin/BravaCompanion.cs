@@ -173,6 +173,14 @@ namespace Oxide.Plugins
             Puts("Server name set to: " + wanted);
         }
 
+        // Runs a full command line ("name arg1 arg2") the way the server console does. Carbon's
+        // Server.Command treats the whole line as a command name, and passing args separately
+        // quotes them, which Carbon's own commands do not expect.
+        private string RunCommand(string line)
+        {
+            return ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), line) ?? "";
+        }
+
         private string T(string en, string es)
         {
             return settings.Language == "es" ? es : en;
@@ -324,7 +332,7 @@ namespace Oxide.Plugins
                     if (now >= due)
                     {
                         nextRepeat[i] = now.AddMinutes(item.EveryMinutes);
-                        Server.Command(item.Command);
+                        RunCommand(item.Command);
                     }
                 }
                 else if (item.Time == hhmm)
@@ -332,7 +340,7 @@ namespace Oxide.Plugins
                     string last;
                     if (lastDailyRun.TryGetValue(i, out last) && last == today) continue;
                     lastDailyRun[i] = today;
-                    Server.Command(item.Command);
+                    RunCommand(item.Command);
                 }
             }
         }
@@ -721,7 +729,7 @@ namespace Oxide.Plugins
         private void WriteWipes(JObject root)
         {
             File.WriteAllText(WipeFile(), root.ToString(Formatting.Indented));
-            Server.Command("c.reloadmodule AutoWipe");
+            RunCommand("c.reloadmodule AutoWipe");
         }
 
         private static JArray WipeList(JObject root)
@@ -875,7 +883,7 @@ namespace Oxide.Plugins
         // Kits keeps its data in memory and writes it when it unloads, so edit the file while it is unloaded.
         private string EditKits(Func<JObject, string> change)
         {
-            Server.Command("c.unload Kits");
+            RunCommand("c.unload Kits");
             string reply;
             try
             {
@@ -893,7 +901,7 @@ namespace Oxide.Plugins
             {
                 reply = "Error: " + e.GetBaseException().Message;
             }
-            Server.Command("c.load Kits");
+            RunCommand("c.load Kits");
             return reply;
         }
 
