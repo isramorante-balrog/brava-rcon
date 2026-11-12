@@ -18,7 +18,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("BravaCompanion", "Brava RCON", "1.2.1")]
+    [Info("BravaCompanion", "Brava RCON", "1.2.6")]
     [Description("Phone alerts (ntfy) and scheduled commands for the Brava RCON app.")]
     public class BravaCompanion : RustPlugin
     {
@@ -173,6 +173,40 @@ namespace Oxide.Plugins
             Puts("Server name set to: " + wanted);
         }
 
+        // Runs a full command line ("name arg1 arg2") the way the server console does. Carbon's
+        // Server.Command treats the whole line as a command name, and passing args separately
+        // quotes them, which Carbon's own commands do not expect.
+        private string RunCommand(string line)
+        {
+            return ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), line) ?? "";
+        }
+
+        // Carbon's c.reloadmodule does not answer commands sent from plugin code, so call
+        // Carbon.Base.BaseModule.FindModule(name).Reload() directly. Oxide has no modules.
+        private bool ReloadCarbonModule(string name)
+        {
+            try
+            {
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type baseModule = asm.GetType("Carbon.Base.BaseModule", false);
+                    if (baseModule == null) continue;
+                    MethodInfo find = baseModule.GetMethod("FindModule", BindingFlags.Public | BindingFlags.Static);
+                    object module = find?.Invoke(null, new object[] { name });
+                    if (module == null) return false;
+                    MethodInfo reload = module.GetType().GetMethod("Reload", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                    if (reload == null) return false;
+                    reload.Invoke(module, null);
+                    return true;
+                }
+            }
+            catch (Exception e)
+            {
+                PrintWarning("Could not reload module " + name + ": " + e.GetBaseException().Message);
+            }
+            return false;
+        }
+
         private string T(string en, string es)
         {
             return settings.Language == "es" ? es : en;
@@ -324,7 +358,7 @@ namespace Oxide.Plugins
                     if (now >= due)
                     {
                         nextRepeat[i] = now.AddMinutes(item.EveryMinutes);
-                        Server.Command(item.Command);
+                        RunCommand(item.Command);
                     }
                 }
                 else if (item.Time == hhmm)
@@ -332,7 +366,7 @@ namespace Oxide.Plugins
                     string last;
                     if (lastDailyRun.TryGetValue(i, out last) && last == today) continue;
                     lastDailyRun[i] = today;
-                    Server.Command(item.Command);
+                    RunCommand(item.Command);
                 }
             }
         }
@@ -721,7 +755,7 @@ namespace Oxide.Plugins
         private void WriteWipes(JObject root)
         {
             File.WriteAllText(WipeFile(), root.ToString(Formatting.Indented));
-            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.reloadmodule", "AutoWipe");
+            ReloadCarbonModule("AutoWipe");
         }
 
         private static JArray WipeList(JObject root)
@@ -875,7 +909,7 @@ namespace Oxide.Plugins
         // Kits keeps its data in memory and writes it when it unloads, so edit the file while it is unloaded.
         private string EditKits(Func<JObject, string> change)
         {
-            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.unload", "Kits");
+            Interface.Oxide.UnloadPlugin("Kits");
             string reply;
             try
             {
@@ -893,8 +927,48 @@ namespace Oxide.Plugins
             {
                 reply = "Error: " + e.GetBaseException().Message;
             }
-            ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "c.load", "Kits");
+            LoadKitsAgain();
             return reply;
+        }
+
+        // Unloading puts a plugin on Carbon's ignore list, so do what Carbon's c.load does:
+        // ScriptProcessor.ClearIgnore(path) then Prepare(id, path). Oxide loads through its API.
+        private void LoadKitsAgain()
+        {
+            string file = Path.GetFullPath(Path.Combine(Interface.Oxide.PluginDirectory, "Kits.cs"));
+            bool requested = false;
+            try
+            {
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type community = asm.GetType("Carbon.Community", false);
+                    if (community == null) continue;
+                    object runtime = community.GetProperty("Runtime", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+                        ?? community.GetField("Runtime", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                    if (runtime == null) break;
+                    object processor = runtime.GetType().GetProperty("ScriptProcessor")?.GetValue(runtime)
+                        ?? runtime.GetType().GetField("ScriptProcessor")?.GetValue(runtime);
+                    if (processor == null) break;
+                    MethodInfo clear = processor.GetType().GetMethods().FirstOrDefault(m => m.Name == "ClearIgnore" && m.GetParameters().Length == 1);
+                    clear?.Invoke(processor, new object[] { file });
+                    MethodInfo prepare = processor.GetType().GetMethods().FirstOrDefault(m => m.Name == "Prepare" && m.GetParameters().Length == 2 && m.GetParameters().All(p => p.ParameterType == typeof(string)));
+                    if (prepare != null)
+                    {
+                        prepare.Invoke(processor, new object[] { "Kits", file });
+                        requested = true;
+                    }
+                    break;
+                }
+            }
+            catch (Exception e)
+            {
+                PrintWarning("Carbon load of Kits failed: " + e.GetBaseException().Message);
+            }
+            if (!requested) Interface.Oxide.LoadPlugin("Kits");
+            timer.Once(90f, () =>
+            {
+                if (plugins.Find("Kits") == null) PrintWarning("Kits did not load again. Run: c.load Kits");
+            });
         }
 
         private JObject Kit(JObject root, string name)
